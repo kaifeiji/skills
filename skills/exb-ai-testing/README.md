@@ -33,6 +33,7 @@ Use the skill with the App 地址. By default it shows the browser window and sa
 - generate app slug from the loaded app title
 - auto-generate run name
 - generate config + prompt suite together
+- reuse one Playwright storage state across session capture, prompt inspection, and case execution
 - visible browser mode is primary
 - background browser mode is smoke-only
 - cases run through the bundled Chromium Playwright runner
@@ -58,3 +59,14 @@ Config preparation accepts the app URL and derives the slug from the page title:
 ```bash
 node tooling/prepare-config-and-prompts.mjs https://<app-url>
 ```
+
+For authenticated apps, capture the state in the dedicated Playwright Chromium window and pass it into preparation:
+
+```bash
+node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json
+node tooling/prepare-config-and-prompts.mjs \
+	https://<app-url> config/<app-slug>.json \
+	--storage-state config/.auth/local-exb.json
+```
+
+The generated config carries the same `storageState` to the runner. Prompt inspection and case execution therefore share one session source.

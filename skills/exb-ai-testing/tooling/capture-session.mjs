@@ -16,6 +16,8 @@ if (!url) {
   process.exit(1)
 }
 
+console.log('[capture-session] Complete sign-in in this Playwright Chromium window; it is the session source for prompt preparation and case execution.')
+
 const outDir = path.dirname(output)
 fs.mkdirSync(outDir, { recursive: true })
 

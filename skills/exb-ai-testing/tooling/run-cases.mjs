@@ -64,6 +64,11 @@ const timeout = Number(config.timeouts?.turn || process.env.TEST_TURN_TIMEOUT ||
 const readyTimeout = Number(config.timeouts?.ready || process.env.TEST_READY_TIMEOUT || 30000)
 const storageState = getArg('--storage-state', process.env.STORAGE_STATE || config.storageState)
 
+if (storageState && !fs.existsSync(path.resolve(storageState))) {
+  console.error(`[run-cases] Session handoff incomplete: storage state not found at ${path.resolve(storageState)}`)
+  process.exit(1)
+}
+
 function defaultRunDir(slug = 'app') {
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
   return path.join('artifacts', `${date}-${slug}-01`)

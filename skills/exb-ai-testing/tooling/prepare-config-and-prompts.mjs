@@ -11,6 +11,8 @@ const { chromium } = require('@playwright/test')
 const args = process.argv.slice(2)
 const appUrl = args[0]
 const outputArg = args[1]
+const storageStateIndex = args.indexOf('--storage-state')
+const storageState = storageStateIndex === -1 ? undefined : args[storageStateIndex + 1]
 
 if (!appUrl) {
   console.error('Usage: node tooling/prepare-config-and-prompts.mjs <app-url> [output-file]')
@@ -18,13 +20,23 @@ if (!appUrl) {
   process.exit(1)
 }
 
+if (storageState && !fs.existsSync(path.resolve(storageState))) {
+  console.error(`[prepare-config-and-prompts] Session handoff incomplete: storage state not found at ${path.resolve(storageState)}`)
+  process.exit(1)
+}
+
 const browser = await chromium.launch({ headless: true })
-const page = await browser.newPage()
+const context = await browser.newContext({
+  ignoreHTTPSErrors: true,
+  ...(storageState ? { storageState: path.resolve(storageState) } : {}),
+})
+const page = await context.newPage()
 let appTitle
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
   appTitle = await page.title()
 } finally {
+  await context.close()
   await browser.close()
 }
 
@@ -37,6 +49,7 @@ fs.mkdirSync(outDir, { recursive: true })
 const config = {
   slug: appSlug,
   url: appUrl,
+  ...(storageState ? { storageState: path.resolve(storageState) } : {}),
   startup: {
     openChat: true,
     viewport: 'desktop-large',

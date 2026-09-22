@@ -34,7 +34,7 @@ If absent, apply the default prompt-generation rules from the template.
 ## Default rules
 
 - read the app title in Chromium and generate a stable kebab-case app slug from it
-- keep auth/session separate from config and report output
+- keep the authenticated storage state in `config/.auth/` and reference it from config
 - generate config and prompt suite together by default
 - generate run name as `YYYYMMDD-app-slug-seq`
 - generate `analysis.md` and report in the standard run folder
@@ -77,9 +77,9 @@ Bundled references and helpers:
 
 ## Workflow
 
-1. Agent validates URL and app/session readiness
-2. Agent reads the app title and prepares the config and reviewed prompt cases
-3. Agent hands the reviewed config to the script runner
+1. Script opens a dedicated Playwright Chromium session and captures auth state when needed
+2. Agent uses that session state to inspect the app and prepare reviewed prompt cases
+3. Agent hands the config, including `storageState`, to the script runner
 4. Script runner executes Chromium cases and writes evidence
 5. Agent reviews evidence and writes `analysis.md`
 6. Agent builds the final HTML report
@@ -88,11 +88,14 @@ Bundled references and helpers:
 
 The workflow has explicit ownership boundaries:
 
-- **Agent phase**: talk to the user, inspect app context, derive the slug, create realistic cases, confirm case intent, and choose the output directory.
-- **Script phase**: receive a reviewed config, launch Chromium, execute `suite.cases[].turns[]` in order, isolate cases in separate pages, and write screenshots, `result.json`, `case-debug.md`, and `summary.json`.
+- **Session phase**: `capture-session.mjs` opens the dedicated Playwright Chromium window and writes a reusable storage state.
+- **Agent phase**: talk to the user, inspect app context through that session state, derive the slug, create realistic cases, confirm case intent, and choose the output directory.
+- **Script phase**: receive a reviewed config with `storageState`, launch Chromium with that state, execute `suite.cases[].turns[]` in order, isolate cases in separate pages, and write screenshots, `result.json`, `case-debug.md`, and `summary.json`.
 - **Agent phase after execution**: read the artifacts, classify findings, write `analysis.md`, and invoke the report builder.
 
 The script runner executes cases; it does not generate prompts or decide what the app should be tested for. A config with no cases is an incomplete Agent-to-script handoff.
+
+The session source is the Playwright Chromium window opened by the skill. Prompt inspection and case execution reuse its saved state; a VS Code browser tab is not part of this handoff.
 
 ## Runtime debug capture contract
 

@@ -48,11 +48,19 @@ npx playwright install chromium
 
 If the app requires a visible browser session, make sure the machine has a working display or browser UI support.
 
-## Step 1: Confirm the front-door decision and check app availability
+## Step 1: Open the dedicated Playwright session
 
 Before running, confirm the App 地址. If the user does not specify otherwise, show the browser window and save results under `artifacts`.
 
 Keep `headed` and `headless` as internal runner settings; the user-facing choice is whether the browser window is visible.
+
+For an authenticated app, capture the shared state with the bundled helper:
+
+```bash
+node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json
+```
+
+Complete sign-in in the Playwright Chromium window opened by this command, then press Enter in the terminal. This state becomes the shared session source for prompt inspection and case execution.
 
 Then:
 
@@ -65,7 +73,7 @@ If the app is not reachable or the session cannot be established, stop.
 
 The remaining values—slug, run name, auth handling, config generation, report generation—should follow the default rules instead of being re-asked.
 
-## Step 2: Prepare config and prompt suite together
+## Step 2: Agent prepares config and prompt suite from the shared session
 
 Open the app in Chromium, read `document.title`, generate the slug, then create or update `config/<app-slug>.json` and generate the prompt suite in the same step.
 
@@ -73,6 +81,14 @@ The bundled preparation command accepts the app URL and derives the slug automat
 
 ```bash
 node tooling/prepare-config-and-prompts.mjs https://<app-url>
+```
+
+When a session state exists, pass it into preparation:
+
+```bash
+node tooling/prepare-config-and-prompts.mjs \
+	https://<app-url> config/<app-slug>.json \
+	--storage-state config/.auth/local-exb.json
 ```
 
 Use the slug consistently in the config filename and in the final run folder name.
@@ -84,7 +100,7 @@ The file should contain:
 - app-specific context notes
 - realistic multi-turn prompt cases
 
-Keep the configuration focused on the app target and test suite only. Keep auth/session separate.
+Keep the configuration focused on the app target and test suite. Its `storageState` field points to the shared Playwright session file; credentials remain in that state file.
 
 This is the Agent-to-script handoff. Before starting the runner, confirm that every case has an id, intent, turns, expected behavior, and watch-for list.
 
