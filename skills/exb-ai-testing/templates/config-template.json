@@ -1,0 +1,40 @@
+{
+  "slug": "<app-slug>",
+  "url": "https://<app-url>",
+  "startup": {
+    "openChat": true,
+    "viewport": "desktop-large",
+    "waitForReady": true,
+    "requireVisibleChat": true
+  },
+  "suite": {
+    "suiteName": "<suite-name>",
+    "appSlug": "<app-slug>",
+    "generatedAt": "<ISO-8601 timestamp>",
+    "sourceNotes": [
+      "Describe the app purpose, key pages, and domain-specific terms.",
+      "Mention known risks or prior manual findings you are trying to avoid repeating."
+    ],
+    "cases": [
+      {
+        "id": "<case-id>",
+        "title": "<case-title>",
+        "riskAreas": ["understand", "find", "plan", "act", "present", "continue"],
+        "intent": "What user goal is being tested?",
+        "turns": [
+          "Turn 1: natural user question",
+          "Turn 2: follow-up or correction",
+          "Turn 3: clarify or refine the goal",
+          "Turn 4: ask for an action or presentation change",
+          "Turn 5: challenge the result or push for a new state"
+        ],
+        "expectedBehavior": "What should be true about the app and assistant behavior?",
+        "watchFor": [
+          "Likely failure mode 1",
+          "Likely failure mode 2"
+        ],
+        "tags": ["example", "map", "filter", "state"]
+      }
+    ]
+  }
+}
