@@ -80,12 +80,6 @@ Open the app in Chromium, read `document.title`, generate the slug, then create 
 The bundled preparation command accepts the app URL and derives the slug automatically:
 
 ```bash
-node tooling/prepare-config-and-prompts.mjs https://<app-url>
-```
-
-When a session state exists, pass it into preparation:
-
-```bash
 node tooling/prepare-config-and-prompts.mjs \
 	https://<app-url> config/<app-slug>.json \
 	--storage-state config/.auth/local-exb.json
@@ -117,7 +111,7 @@ node tooling/run-cases.mjs \
 
 Use `--mode headless` for a quick smoke check or regression shortcut; use the visible mode for primary evidence. Add `--case <case-id>` for a focused run.
 
-The runner owns all DOM locator candidates. Config contains app and case data, while locator candidates stay in the runner. Each case starts in a fresh page. Startup failures are recorded under that case and the runner continues with the next case.
+The runner owns all DOM locator candidates. It opens Ask AI with the stable `assistant-anchor` class before language-dependent fallbacks. Config contains app, case data, and the shared `storageState` path, while locator candidates stay in the runner. Each case starts in a fresh page with the same state. Startup failures are recorded under that case and the runner continues with the next case.
 
 This should create artifacts under:
 

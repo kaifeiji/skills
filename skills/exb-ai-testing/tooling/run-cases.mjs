@@ -50,6 +50,8 @@ const selectors = {
     'button[title*="send" i]',
   ],
   openChat: [
+    'button.assistant-anchor[aria-haspopup="true"]',
+    'button.assistant-anchor',
     'button[aria-label*="chat" i]',
     'button[title*="chat" i]',
   ],
@@ -64,7 +66,11 @@ const timeout = Number(config.timeouts?.turn || process.env.TEST_TURN_TIMEOUT ||
 const readyTimeout = Number(config.timeouts?.ready || process.env.TEST_READY_TIMEOUT || 30000)
 const storageState = getArg('--storage-state', process.env.STORAGE_STATE || config.storageState)
 
-if (storageState && !fs.existsSync(path.resolve(storageState))) {
+if (!storageState) {
+  console.error('[run-cases] Session handoff incomplete: provide --storage-state or config.storageState before running cases.')
+  process.exit(1)
+}
+if (!fs.existsSync(path.resolve(storageState))) {
   console.error(`[run-cases] Session handoff incomplete: storage state not found at ${path.resolve(storageState)}`)
   process.exit(1)
 }
@@ -195,7 +201,7 @@ async function runCase(page, testCase, index) {
 
 const browser = await chromium.launch({ headless: mode === 'headless' })
 const contextOptions = { ignoreHTTPSErrors: true }
-if (storageState) contextOptions.storageState = path.resolve(storageState)
+contextOptions.storageState = path.resolve(storageState)
 if (config.startup?.viewport === 'mobile') contextOptions.viewport = { width: 390, height: 844 }
 if (config.startup?.viewport === 'desktop-large') contextOptions.viewport = { width: 1440, height: 1000 }
 const context = await browser.newContext(contextOptions)

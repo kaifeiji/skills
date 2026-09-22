@@ -33,7 +33,7 @@ If absent, apply the default prompt-generation rules from the template.
 
 ## Default rules
 
-- read the app title in Chromium and generate a stable kebab-case app slug from it
+- read the app title in the dedicated Playwright Chromium session and generate a stable kebab-case app slug from it
 - keep the authenticated storage state in `config/.auth/` and reference it from config
 - generate config and prompt suite together by default
 - generate run name as `YYYYMMDD-app-slug-seq`
@@ -78,7 +78,7 @@ Bundled references and helpers:
 ## Workflow
 
 1. Script opens a dedicated Playwright Chromium session and captures auth state when needed
-2. Agent uses that session state to inspect the app and prepare reviewed prompt cases
+2. Agent uses that session state, through the dedicated Playwright Chromium page, to inspect the app and prepare reviewed prompt cases
 3. Agent hands the config, including `storageState`, to the script runner
 4. Script runner executes Chromium cases and writes evidence
 5. Agent reviews evidence and writes `analysis.md`
@@ -96,6 +96,8 @@ The workflow has explicit ownership boundaries:
 The script runner executes cases; it does not generate prompts or decide what the app should be tested for. A config with no cases is an incomplete Agent-to-script handoff.
 
 The session source is the Playwright Chromium window opened by the skill. Prompt inspection and case execution reuse its saved state; a VS Code browser tab is not part of this handoff.
+
+Session handoff is required before prompt preparation or case execution. The preparation script and runner both stop before browser work when no storage state is supplied.
 
 ## Runtime debug capture contract
 
@@ -134,6 +136,7 @@ The runner must:
 - launch Playwright's `chromium` directly as the browser control surface
 - execute `suite.cases[].turns[]` in order and continue to the next case after a case failure
 - use the built-in locator candidates; locator ownership stays inside the runner
+- open Ask AI with `button.assistant-anchor[aria-haspopup="true"]` before language-dependent fallbacks
 - accept `--case <case-id>` for a focused run and `--storage-state <path>` for an authenticated session
 - write `summary.json` at the run root
 - after a case starts, write its `result.json`, `case-debug.md`, and turn screenshots; startup failures receive a case-level error artifact

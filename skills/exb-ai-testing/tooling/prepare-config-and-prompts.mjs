@@ -15,12 +15,16 @@ const storageStateIndex = args.indexOf('--storage-state')
 const storageState = storageStateIndex === -1 ? undefined : args[storageStateIndex + 1]
 
 if (!appUrl) {
-  console.error('Usage: node tooling/prepare-config-and-prompts.mjs <app-url> [output-file]')
-  console.error('Example: node tooling/prepare-config-and-prompts.mjs https://example.com/experience/demo config/app.json')
+  console.error('Usage: node tooling/prepare-config-and-prompts.mjs <app-url> [output-file] --storage-state <path>')
+  console.error('Example: node tooling/prepare-config-and-prompts.mjs https://example.com/experience/demo config/app.json --storage-state config/.auth/local-exb.json')
   process.exit(1)
 }
 
-if (storageState && !fs.existsSync(path.resolve(storageState))) {
+if (!storageState) {
+  console.error('[prepare-config-and-prompts] Session handoff incomplete: provide --storage-state from capture-session.mjs.')
+  process.exit(1)
+}
+if (!fs.existsSync(path.resolve(storageState))) {
   console.error(`[prepare-config-and-prompts] Session handoff incomplete: storage state not found at ${path.resolve(storageState)}`)
   process.exit(1)
 }

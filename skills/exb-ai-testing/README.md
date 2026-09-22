@@ -54,10 +54,12 @@ node tooling/run-cases.mjs \
 
 The Agent prepares and reviews the cases first. The runner then uses Playwright `chromium` directly, executes all turns in order, and writes `summary.json` plus per-case `result.json`, `case-debug.md`, and screenshots. Each case gets a fresh page; startup errors are recorded in that case's artifacts. Use `--case <case-id>` for a focused run and `--storage-state <path>` for an authenticated session. Config stores app and case data; locator candidates are owned by the runner. The Agent creates `analysis.md` and the report after the run artifacts exist.
 
-Config preparation accepts the app URL and derives the slug from the page title:
+Config preparation accepts the app URL, shared session state, and derives the slug from the page title:
 
 ```bash
-node tooling/prepare-config-and-prompts.mjs https://<app-url>
+node tooling/prepare-config-and-prompts.mjs \
+	https://<app-url> config/<app-slug>.json \
+	--storage-state config/.auth/local-exb.json
 ```
 
 For authenticated apps, capture the state in the dedicated Playwright Chromium window and pass it into preparation:
@@ -69,4 +71,4 @@ node tooling/prepare-config-and-prompts.mjs \
 	--storage-state config/.auth/local-exb.json
 ```
 
-The generated config carries the same `storageState` to the runner. Prompt inspection and case execution therefore share one session source.
+The generated config carries the same `storageState` to the runner. Prompt inspection and case execution therefore share one session source. Ask AI is located by the stable `assistant-anchor` class before language-dependent attributes.

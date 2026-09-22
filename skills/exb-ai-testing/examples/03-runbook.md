@@ -10,33 +10,30 @@ Validate how an AI Chat assistant behaves in the San Diego Explore app and produ
 - App summary: tourism and place discovery app with map-centered exploration
 - Target risk areas: map-state grounding, source choice, correction handling, and renderer/presentation changes
 
-## Step 1: Validate app access
+## Step 1: Create the shared Playwright session
 
 ```bash
-curl -I "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places"
+node tooling/capture-session.mjs \
+  "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places" \
+  config/.auth/local-exb.json
 ```
 
-Check:
+Complete sign-in and app readiness in the Playwright Chromium window, then press Enter in the terminal. The same state is reused for prompt inspection and case execution.
 
-- the page loads successfully
-- the app is visible in a browser context
-- the Chat panel is actually present and usable
-- any required auth/session is already active
+## Step 2: Validate app access and create the app config
 
-If the app cannot be reached or the chat is not visible, stop before running the test.
-
-## Step 2: Create the app config
-
-Read the app title in Chromium and let the preparation script derive the slug:
+Read the app title in the dedicated Chromium session and let the preparation script derive the slug:
 
 ```bash
 node tooling/prepare-config-and-prompts.mjs \
-  "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places"
+  "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places" \
+  config/<generated-app-slug>.json \
+  --storage-state config/.auth/local-exb.json
 ```
 
 This matches the app's actual context and the real run pattern.
 
-## Step 3: Generate the prompt suite
+## Step 3: Agent generates and reviews the prompt suite
 
 Use the real examples from the app context:
 
@@ -47,7 +44,7 @@ Use the real examples from the app context:
 
 The suite should reflect the actual app's capabilities and avoid over-generalized prompts.
 
-## Step 4: Run the scripted Chromium evaluation
+## Step 4: Run the scripted Chromium evaluation with the shared session
 
 Use the generated config with the bundled runner:
 
