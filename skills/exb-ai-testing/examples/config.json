@@ -1,0 +1,37 @@
+{
+  "slug": "explore-san-diego",
+  "url": "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/",
+  "language": "en",
+  "storageState": "config/.auth/local-exb.json",
+  "startup": {
+    "openChat": true,
+    "viewport": "desktop-large",
+    "requireVisibleChat": true
+  },
+  "suite": {
+    "cases": [
+      {
+        "id": "page_0-places-flow",
+        "title": "Explore San Diego places page conversation",
+        "pageId": "page_0",
+        "pageTitle": "Explore San Diego",
+        "intent": "Evaluate whether the assistant maintains the correct place data source and map state through a realistic multi-turn conversation.",
+        "turns": [
+          "Show me restaurants in this app, just the names to start.",
+          "Only keep ones that sound like cafes or coffee places.",
+          "Put them on the map without switching to a different data source.",
+          "Actually compare them as a table, and do not invent missing websites.",
+          "Keep the current map extent and explain which result has missing information."
+        ],
+        "expectedBehavior": "The assistant stays on the relevant place data source, preserves context across turns, chooses appropriate presentation, and states unsupported details honestly.",
+        "watchFor": [
+          "Switches to a different layer or generic web behavior",
+          "Invents website or address values",
+          "Presentation changes alter the result set",
+          "Loses the current map extent or source context"
+        ],
+        "tags": ["restaurants", "filter", "map-state", "continuity"]
+      }
+    ]
+  }
+}

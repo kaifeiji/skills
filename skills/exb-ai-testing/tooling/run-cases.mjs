@@ -20,6 +20,11 @@ if (!config) {
   console.error('Usage: node tooling/run-cases.mjs --config <config.json> [--mode headed|headless] [--output <dir>] [--case <case-id>]')
   process.exit(1)
 }
+const language = config.language || 'en'
+if (!['en', 'zh'].includes(language)) {
+  console.error('[run-cases] config.language must be en or zh')
+  process.exit(1)
+}
 
 const mode = getArg('--mode', process.env.TEST_MODE || 'headed')
 if (!['headed', 'headless'].includes(mode)) {
@@ -93,19 +98,189 @@ async function findVisibleLocator(page, candidates, wait = 0) {
   return null
 }
 
+async function inspectSession(page) {
+  const pageInfo = await page.evaluate(() => ({
+    title: document.title,
+    url: location.href,
+    bodyText: document.body?.innerText?.slice(0, 4000) || '',
+    hasPasswordInput: Boolean(document.querySelector('input[type="password"]')),
+    hasLoginForm: Boolean(document.querySelector('form[action*="oauth" i], form[action*="sign" i]')),
+  })).catch(() => ({ title: '', url: page.url(), bodyText: '' }))
+  const loginUrl = /\/sharing\/.*oauth2|\/home\/sign-in|\/signin/i.test(pageInfo.url)
+  const loginTitle = /sign in|log in|登录/i.test(pageInfo.title)
+  const loginText = /sign in|log in|登录|用户名|username|password/i.test(pageInfo.bodyText)
+  if (loginUrl || loginTitle || pageInfo.hasPasswordInput || pageInfo.hasLoginForm || (loginText && !pageInfo.url.startsWith(config.url))) {
+    throw new Error([
+      '[run-cases] Session invalid or expired.',
+      `The shared session was redirected to a sign-in page: ${pageInfo.url}`,
+      'Agent action: ask the user to run capture-session.mjs, complete sign-in in the opened browser, and type READY before running cases again.',
+    ].join('\n'))
+  }
+  return pageInfo
+}
+
+async function dismissBlockingModals(page) {
+  const deadline = Date.now() + readyTimeout
+  const confirmationPattern = /^(ok|okay|continue|confirm|accept|agree|got it|done|close|next|proceed|确定|确认|同意|继续|关闭|知道了|下一步)$/i
+  let handled = 0
+
+  while (Date.now() < deadline && handled < 5) {
+    const dialogs = page.locator('[role="dialog"]:visible, dialog:visible')
+    const count = await dialogs.count()
+    if (!count) return handled
+
+    let progressed = false
+    for (let index = 0; index < count; index += 1) {
+      const dialog = dialogs.nth(index)
+      const checkboxes = dialog.locator('input[type="checkbox"]:visible, [role="checkbox"]:visible')
+      for (let checkboxIndex = 0; checkboxIndex < await checkboxes.count(); checkboxIndex += 1) {
+        const checkbox = checkboxes.nth(checkboxIndex)
+        const checked = await checkbox.isChecked().catch(async () => (
+          (await checkbox.getAttribute('aria-checked')) === 'true'
+        ))
+        if (!checked) await checkbox.click()
+      }
+
+      const buttons = dialog.locator('button:visible, [role="button"]:visible, input[type="button"]:visible, input[type="submit"]:visible')
+      for (let buttonIndex = 0; buttonIndex < await buttons.count(); buttonIndex += 1) {
+        const button = buttons.nth(buttonIndex)
+        const label = [
+          await button.innerText().catch(() => ''),
+          await button.getAttribute('aria-label').catch(() => ''),
+          await button.getAttribute('title').catch(() => ''),
+          await button.getAttribute('value').catch(() => ''),
+        ].join(' ').trim()
+        if (confirmationPattern.test(label)) {
+          await button.click()
+          handled += 1
+          progressed = true
+          break
+        }
+      }
+      if (progressed) break
+    }
+    if (!progressed) {
+      const label = await dialogs.first().getAttribute('aria-label').catch(() => '')
+      const text = (await dialogs.first().innerText().catch(() => '')).trim().slice(0, 300)
+      throw new Error([
+        '[run-cases] A blocking app dialog requires manual confirmation.',
+        `Dialog: ${label || text || '(unlabeled dialog)'}`,
+        'Agent action: ask the user to complete the dialog, including any required checkbox, then run the cases again.',
+      ].join('\n'))
+    }
+    await page.waitForTimeout(250)
+  }
+  return handled
+}
+
+async function validateSessionAndChat(page) {
+  try {
+    await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: readyTimeout })
+    await waitForNetworkIdle(page)
+    await inspectSession(page)
+    await dismissBlockingModals(page)
+    await inspectSession(page)
+  } catch (error) {
+    if (error.message.startsWith('[run-cases] Session invalid')) throw error
+    throw new Error([
+      '[run-cases] Session validation failed.',
+      error.message,
+      'Agent action: ask the user to verify the app URL and refresh the shared session with capture-session.mjs.',
+    ].join('\n'))
+  }
+
+  const existingInput = await findVisibleLocator(page, selectors.ready, readyTimeout)
+  if (!existingInput) {
+    const openChat = await findVisibleLocator(page, selectors.openChat, readyTimeout)
+    if (openChat) await openChat.click()
+  }
+  const chatInput = await findVisibleLocator(page, selectors.ready, readyTimeout)
+  if (!chatInput) {
+    throw new Error([
+      '[run-cases] AI Chat is unavailable or not enabled for this app.',
+      'The session is valid, but no supported AI Chat launcher or message input was found.',
+      'Agent action: ask the user to enable/configure AI Chat in the Experience Builder app, publish the change if required, and run the cases again.',
+    ].join('\n'))
+  }
+  return { pageInfo: await inspectSession(page), chatInput }
+}
+
 async function readRuntime(page) {
-  return page.evaluate(() => {
+  return page.evaluate((language) => {
     const runtime = window._assistantRuntime
     if (!runtime) return { available: false, transcript: null }
-    const transcript = runtime.debugTranscript ?? null
-    const sectionLabels = {
-      'user-question': '用户提问',
-      'intermediate-reasoning': '中间推理',
-      'streamed-output': '输出流',
-      'intermediate-result': '中间结果',
-      'final-result': '最后结果',
-      error: '错误',
+    const clip = (value, limit = 20_000) => {
+      if (typeof value !== 'string') return value
+      return value.length > limit ? `${value.slice(0, limit)}...[truncated ${value.length - limit} chars]` : value
     }
+    const contentText = (value) => {
+      if (typeof value === 'string') return clip(value)
+      try {
+        return clip(JSON.stringify(value))
+      } catch {
+        return '[unserializable content]'
+      }
+    }
+    const pickMessage = (message) => ({
+      id: message?.id || null,
+      type: message?.type || null,
+      name: message?.name || null,
+      content: contentText(message?.content),
+    })
+    const state = runtime.state || {}
+    const completedSteps = (state.completedSteps || runtime.completedSteps || []).map((step) => ({
+      description: step?.description || null,
+      agent: step?.agent || null,
+      humanMessageId: step?.humanMessageId || null,
+      output: step?.output ? {
+        type: step.output.type || null,
+        description: step.output.description || null,
+        payload: contentText(step.output.payload),
+        streamedToUser: step.output.streamedToUser ?? null,
+      } : null,
+    }))
+    const plannedSteps = (state.plannedSteps || []).map((step) => ({
+      description: step?.description || null,
+      agent: step?.agent || null,
+      humanMessageId: step?.humanMessageId || null,
+    }))
+    const pendingSteps = (state.pendingSteps || []).map((step) => ({
+      description: step?.description || null,
+      agent: step?.agent || null,
+      humanMessageId: step?.humanMessageId || null,
+    }))
+    const chatHistory = (runtime.chatHistory || []).map(pickMessage)
+    const userInputs = (state.userInputs || []).map(pickMessage)
+    const messages = (state.messages || []).map(pickMessage)
+    const context = {
+      visibleWidgets: (state.context?.visibleWidgets || []).map((widget) => ({
+        widgetId: widget?.widgetId || widget?.id || null,
+        name: widget?.name || null,
+        type: widget?.type || null,
+      })),
+      aiRenderers: (state.context?.aiRenderers || []).map((renderer) => ({
+        name: renderer?.name || null,
+        description: renderer?.description || null,
+      })),
+    }
+    const transcript = runtime.debugTranscript ?? null
+    const sectionLabels = language === 'zh'
+      ? {
+          'user-question': '用户提问',
+          'intermediate-reasoning': '中间推理',
+          'streamed-output': '输出流',
+          'intermediate-result': '中间结果',
+          'final-result': '最后结果',
+          error: '错误',
+        }
+      : {
+          'user-question': 'User question',
+          'intermediate-reasoning': 'Intermediate reasoning',
+          'streamed-output': 'Streamed output',
+          'intermediate-result': 'Intermediate result',
+          'final-result': 'Final result',
+          error: 'Error',
+        }
     const debugText = Array.isArray(transcript) && transcript.some((turn) => turn?.entries?.length)
       ? [
           '# AI Assistant Debug Transcript',
@@ -132,8 +307,35 @@ async function readRuntime(page) {
       transcript,
       debugText,
       runtimeKeys: Object.keys(runtime),
+      runtimeReady: runtime.runtimeReady ?? null,
+      threadId: runtime.threadId || null,
+      streamEpoch: runtime.streamEpoch ?? null,
+      isWorking: runtime.isWorking ?? null,
+      chatHistory,
+      userInputs,
+      messages,
+      planReason: state.planReason || null,
+      reasoningMetadata: state.reasoningMetadata || null,
+      plannedSteps,
+      pendingSteps,
+      completedSteps,
+      context,
+      mentionedVisibleWidgetIds: state.mentionedVisibleWidgetIds || [],
+      evaluation: state.evaluation || null,
+      suggestions: state.suggestions || [],
+      signal: {
+        transcriptLength: Array.isArray(transcript) ? transcript.length : 0,
+        chatHistoryLength: chatHistory.length,
+        userInputCount: userInputs.length,
+        messageCount: messages.length,
+        completedStepCount: completedSteps.length,
+        pendingStepCount: pendingSteps.length,
+        isWorking: runtime.isWorking ?? null,
+        streamEpoch: runtime.streamEpoch ?? null,
+        latestCompletedMessageId: completedSteps.at(-1)?.humanMessageId || null,
+      },
     }
-  }).catch((error) => ({ available: false, transcript: null, error: error.message }))
+  }, language).catch((error) => ({ available: false, transcript: null, error: error.message }))
 }
 
 function terminalStatus(transcript) {
@@ -160,12 +362,19 @@ function terminalStatus(transcript) {
   ].includes(status)) || null
 }
 
+function runtimeTerminalStatus(runtime, before) {
+  const completedBefore = before?.signal?.completedStepCount || 0
+  const completedAfter = runtime?.signal?.completedStepCount || 0
+  if (runtime?.isWorking === false && completedAfter > completedBefore) return 'completed'
+  return null
+}
+
 async function waitForTurn(page, before, turnStartedAt) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
     const runtime = await readRuntime(page)
-    const changed = JSON.stringify(runtime.transcript) !== JSON.stringify(before.transcript)
-    const status = terminalStatus(runtime.transcript)
+    const changed = JSON.stringify(runtime.signal) !== JSON.stringify(before.signal)
+    const status = terminalStatus(runtime.transcript) || runtimeTerminalStatus(runtime, before)
     if (changed && status) return { ...runtime, status }
     await page.waitForTimeout(500)
   }
@@ -197,6 +406,30 @@ async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
     '',
     detailedTranscript || 'No detailed AssistantRuntime entries were available.',
     '',
+    '## Turn Evidence',
+    '',
+    '```json',
+    JSON.stringify(turnRecords.map((turn) => ({
+      index: turn.index,
+      prompt: turn.prompt,
+      status: turn.status,
+      runtimeStatus: turn.runtimeStatus || null,
+      startedAt: turn.startedAt,
+      endedAt: turn.endedAt || null,
+      durationMs: turn.durationMs ?? null,
+      runtimeBefore: turn.runtimeBefore?.signal || null,
+      runtimeAfter: turn.runtimeAfter ? {
+        signal: turn.runtimeAfter.signal || null,
+        threadId: turn.runtimeAfter.threadId || null,
+        reasoningMetadata: turn.runtimeAfter.reasoningMetadata || null,
+        plannedSteps: turn.runtimeAfter.plannedSteps || [],
+        completedSteps: turn.runtimeAfter.completedSteps || [],
+        evaluation: turn.runtimeAfter.evaluation || null,
+      } : null,
+      error: turn.error || null,
+    })), null, 2),
+    '```',
+    '',
     '## Runtime Snapshots',
     '',
     '```json',
@@ -224,9 +457,11 @@ async function runCase(page, testCase, index) {
     turns: [],
   }
   let runtime = await readRuntime(page)
+  const turnRecords = []
 
   for (let turnIndex = 0; turnIndex < (testCase.turns || []).length; turnIndex += 1) {
     const prompt = testCase.turns[turnIndex]
+    const turnStartedMs = Date.now()
     const turnStartedAt = new Date().toISOString()
     const turn = { index: turnIndex + 1, prompt, startedAt: turnStartedAt, status: 'failed' }
     turn.runtimeBefore = runtime
@@ -253,7 +488,21 @@ async function runCase(page, testCase, index) {
       turn.endedAt = new Date().toISOString()
       await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}-error.png`), fullPage: true }).catch(() => {})
     }
-    result.turns.push(turn)
+    turn.durationMs = Date.now() - turnStartedMs
+    turnRecords.push(turn)
+    const latestStep = [...(turn.runtimeAfter?.completedSteps || [])].reverse()[0]
+    result.turns.push({
+      index: turn.index,
+      prompt: turn.prompt,
+      agentResponse: latestStep?.output?.payload || null,
+      status: turn.status,
+      runtimeStatus: turn.runtimeStatus || null,
+      startedAt: turn.startedAt,
+      endedAt: turn.endedAt || null,
+      durationMs: turn.durationMs,
+      error: turn.error || null,
+      screenshot: `turn-${String(turn.index).padStart(2, '0')}${turn.error ? '-error' : ''}.png`,
+    })
     fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
   }
 
@@ -264,10 +513,8 @@ async function runCase(page, testCase, index) {
   ].includes(turn.status)) ? 'failed' : 'completed'
   result.endedAt = new Date().toISOString()
   result.runtimeAvailable = runtime.available
-  result.runtimeTranscript = runtime.transcript
-  result.runtimeDebugTranscript = runtime.debugText || turnRecords.findLast((turn) => turn.debugText)?.debugText || null
   fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
-  await writeCaseDebug(caseDir, testCase, runtime, result.turns)
+  await writeCaseDebug(caseDir, testCase, runtime, turnRecords)
   return result
 }
 
@@ -279,12 +526,33 @@ if (config.startup?.viewport === 'desktop-large') contextOptions.viewport = { wi
 const context = await browser.newContext(contextOptions)
 const results = []
 try {
-  for (let index = 0; index < cases.length; index += 1) {
+  let preflightError = null
+  const preflightPage = await context.newPage()
+  try {
+    await validateSessionAndChat(preflightPage)
+    console.log('[run-cases] Session is valid and AI Chat is available.')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    fs.writeFileSync(path.join(runRoot, 'preflight-error.json'), JSON.stringify({
+      status: 'failed',
+      error: message,
+      createdAt: new Date().toISOString(),
+    }, null, 2) + '\n')
+    console.error(message)
+    process.exitCode = 1
+    preflightError = message
+  } finally {
+    await preflightPage.close()
+  }
+  if (!preflightError) for (let index = 0; index < cases.length; index += 1) {
     const testCase = cases[index]
     const page = await context.newPage()
     try {
       await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: readyTimeout })
       await waitForNetworkIdle(page)
+      await inspectSession(page)
+      await dismissBlockingModals(page)
+      await inspectSession(page)
       if (config.startup?.openChat) {
         const openChat = await findVisibleLocator(page, selectors.openChat, readyTimeout)
         if (openChat) await openChat.click()

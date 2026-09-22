@@ -10,10 +10,11 @@ This workflow is self-contained in this skill bundle. It runs against the target
 
 Confirm the following in plain language:
 
-- App 地址
-- 是否显示浏览器窗口（默认显示）
-- 结果保存位置（默认 `artifacts`）
-- 测试重点（可选）
+- App URL
+- Preferred language (default: English; supported values: English and Chinese)
+- Whether to show the browser window (default: visible)
+- Result output location (default: `artifacts`)
+- Test focus (optional)
 
 Optional: the user may provide a test focus or concern area. Apply that lens during prompt generation and analysis; otherwise use the default prompt-generation rules and coverage template.
 
@@ -39,6 +40,10 @@ Before running the workflow, make sure:
 - the project dependencies are installed
 - Playwright browser dependencies are installed
 
+Check Node.js, `@playwright/test`, and Chromium before opening the app. Do not use the VS Code browser; the bundled Node scripts must open the app through Playwright Chromium.
+
+If `@playwright/test` is missing, ask the user for approval before running `npm install -D @playwright/test`, because it modifies the target project's `package.json`. If Chromium is missing, ask before running `npx playwright install chromium`. Do not copy this skill's `templates/` or `tooling/` directories into the target app.
+
 Typical setup:
 
 ```bash
@@ -48,11 +53,11 @@ npx playwright install chromium
 
 If the app requires a visible browser session, make sure the machine has a working display or browser UI support.
 
-## Step 1: Open the dedicated Playwright session
+## Step 1: Verify Node Playwright, then open the dedicated session
 
-Before running, confirm the App 地址. If the user does not specify otherwise, show the browser window and save results under `artifacts`.
+Before running, confirm the App URL and preferred language. If the user does not specify otherwise, use English, show the browser window, and save results under `artifacts`.
 
-Use the visible browser by default; execution mode stays internal to the runner.
+Use the visible Node Playwright browser by default. Do not open a VS Code browser tab for app inspection.
 
 For an authenticated app, capture the shared state with the bundled helper:
 
@@ -60,11 +65,11 @@ For an authenticated app, capture the shared state with the bundled helper:
 node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json
 ```
 
-Complete sign-in in the Playwright Chromium window opened by this command. The browser stays open during sign-in; type `READY` in the terminal only after the app is fully loaded. The helper verifies the Ask AI/chat UI before replacing the session file, so an invalid state is not saved.
+Complete sign-in in the Playwright Chromium window opened by this command. The browser stays open during sign-in; type `READY` in the terminal only after the app is fully loaded. The helper saves the authenticated browser state through a temporary file, so a failed capture does not replace the saved state.
 
 When `config/.auth/local-exb.json` already exists, the helper loads it into the new Chromium context first and refreshes that same state file after successful verification.
 
-The helper waits for network idle before presenting the READY prompt and again after sign-in, then confirms the Ask AI/chat UI.
+The helper waits for network idle before presenting the READY prompt and again after sign-in. AI Chat and blocking modal checks happen only in `run-cases.mjs` immediately before turn execution.
 
 Then:
 
@@ -101,6 +106,7 @@ The file should contain:
 - realistic multi-turn prompt cases
 
 Keep the configuration focused on the app target and test suite. Its `storageState` field points to the shared Playwright session file; credentials remain in that state file.
+Its `language` field records the selected output language and defaults to `en`.
 
 This is the Agent-to-script handoff. Before starting the runner, confirm that every case has an id, intent, turns, expected behavior, and watch-for list.
 
@@ -151,15 +157,9 @@ If `window._assistantRuntime` is unavailable after a case has actually run, reco
 
 ## Step 5: Agent analyzes the evidence
 
-After the run has produced real artifacts, use them to write `analysis.md`; this file is created during evidence analysis.
+After the run has produced real artifacts, write `analysis.md` under `artifacts/<run-name>/`. Keep it focused on turn-by-turn evidence, findings, and impact.
 
-When building the final report, use the bundled Node tooling:
-
-```bash
-node tooling/build-report.mjs artifacts/<run-name>
-```
-
-The analysis should explain:
+The analysis should be written in the selected language and explain:
 
 - user goal
 - starting app state
@@ -169,15 +169,7 @@ The analysis should explain:
 - evidence used
 - user-visible impact
 
-## Step 6: Agent builds and opens the report
-
-```bash
-node tooling/build-report.mjs artifacts/<run-name>
-```
-
-If a local HTML viewer or launcher is available, open the generated report directory afterward.
-
-The report should highlight the summary, high-impact findings, evidence, and recommended next actions.
+Write one block for every turn. English blocks use `User Prompt`, `Agent Response`, `Status`, and `Conclusion`; Chinese blocks use `用户提问`, `Agent 回答`, `状态`, and `结论`. Include the measured turn duration in the status line. Judge the prompt and response first. A successful conclusion is one short sentence. For failures, use `case-debug.md` and the matching turn screenshot only as supporting evidence when the conversation does not establish the cause.
 
 ## Completion condition
 
@@ -186,5 +178,4 @@ The workflow is complete only when:
 - app session is valid
 - config and prompt suite are prepared together
 - run evidence exists
-- analysis.md is populated
-- report is built successfully
+- `artifacts/<run-name>/analysis.md` is populated, readable, and complete

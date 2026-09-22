@@ -1,27 +1,27 @@
 {
   "slug": "<generated-from-app-title>",
   "url": "https://<app-url>",
+  "language": "en",
   "storageState": "config/.auth/local-exb.json",
   "startup": {
     "openChat": true,
     "viewport": "desktop-large",
-    "waitForReady": true,
     "requireVisibleChat": true
   },
+  "appContext": {
+    "pages": [],
+    "dataSources": [],
+    "accessCheck": "Verify each page in the dedicated Playwright session before generating its case."
+  },
   "suite": {
-    "suiteName": "<suite-name>",
-    "appSlug": "<generated-from-app-title>",
-    "generatedAt": "<ISO-8601 timestamp>",
-    "sourceNotes": [
-      "Describe the app purpose, key pages, and domain-specific terms.",
-      "Mention known risks or prior manual findings you are trying to avoid repeating."
-    ],
     "cases": [
       {
-        "id": "<case-id>",
-        "title": "<case-title>",
-        "riskAreas": ["understand", "find", "plan", "act", "present", "continue"],
-        "intent": "What user goal is being tested?",
+        "id": "<page-id>",
+        "title": "<page-title> conversation",
+        "pageId": "<page-id>",
+        "pageTitle": "<visible page title>",
+        "widgets": [],
+        "intent": "What user goal is being tested on this page?",
         "turns": [
           "Turn 1: natural user question",
           "Turn 2: follow-up or correction",
@@ -30,11 +30,8 @@
           "Turn 5: challenge the result or push for a new state"
         ],
         "expectedBehavior": "What should be true about the app and assistant behavior?",
-        "watchFor": [
-          "Likely failure mode 1",
-          "Likely failure mode 2"
-        ],
-        "tags": ["example", "map", "filter", "state"]
+        "watchFor": ["Likely failure mode 1", "Likely failure mode 2"],
+        "tags": ["example", "page", "state"]
       }
     ]
   }
