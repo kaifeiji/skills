@@ -120,7 +120,7 @@ The workflow must:
 4. keep screenshots and `result.json` alongside the runtime transcript
 5. use the transcript as supporting evidence; screenshots remain primary evidence for user-visible claims
 
-Each `case-debug.md` records runtime evidence per turn, including the runtime snapshot before submission, the snapshot after waiting, detected runtime status, and the final runtime keys. A final case-level snapshot alone is insufficient because a later timeout can hide earlier turn evidence. Distinguish `timeout` (transcript exists without a terminal status) from `runtime-unavailable` (the runtime object exists without a transcript).
+Each `case-debug.md` renders the detailed AssistantRuntime transcript per turn, including `messageId`, status, start/end timestamps, section titles, timestamps, and entry content. It also includes the runtime snapshot before submission, the snapshot after waiting, detected runtime status, and final runtime keys. A final case-level snapshot alone is insufficient because a later timeout can hide earlier turn evidence. Distinguish `timeout` (transcript exists without a terminal status) from `runtime-unavailable` (the runtime object exists without a transcript).
 
 If no runtime entries are available after a real case was executed, include that absence in the case's actual debug record. Create `case-debug.md`, `analysis.md`, and the report only at their respective execution and analysis stages.
 

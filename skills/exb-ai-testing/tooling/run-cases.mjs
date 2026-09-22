@@ -97,9 +97,40 @@ async function readRuntime(page) {
   return page.evaluate(() => {
     const runtime = window._assistantRuntime
     if (!runtime) return { available: false, transcript: null }
+    const transcript = runtime.debugTranscript ?? null
+    const sectionLabels = {
+      'user-question': '用户提问',
+      'intermediate-reasoning': '中间推理',
+      'streamed-output': '输出流',
+      'intermediate-result': '中间结果',
+      'final-result': '最后结果',
+      error: '错误',
+    }
+    const debugText = Array.isArray(transcript) && transcript.some((turn) => turn?.entries?.length)
+      ? [
+          '# AI Assistant Debug Transcript',
+          '',
+          ...transcript.flatMap((turn, index) => [
+            `## Turn ${index + 1}`,
+            `- Message ID: ${turn.messageId || '(missing)'}`,
+            `- Status: ${turn.status || 'running'}`,
+            `- Started: ${turn.startedAt || '(missing)'}`,
+            ...(turn.endedAt ? [`- Ended: ${turn.endedAt}`] : []),
+            '',
+            ...(turn.entries || []).flatMap((entry) => [
+              `### ${sectionLabels[entry.section] || entry.section || 'Debug'} - ${entry.title || '(untitled)'}`,
+              entry.timestamp ? `_Recorded at ${entry.timestamp}_` : '',
+              '',
+              entry.content || '(empty)',
+              '',
+            ]),
+          ]),
+        ].join('\n')
+      : ''
     return {
       available: true,
-      transcript: runtime.debugTranscript ?? null,
+      transcript,
+      debugText,
       runtimeKeys: Object.keys(runtime),
     }
   }).catch((error) => ({ available: false, transcript: null, error: error.message }))
@@ -147,6 +178,10 @@ async function waitForTurn(page, before, turnStartedAt) {
 }
 
 async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
+  const detailedTranscript = [...turnRecords]
+    .reverse()
+    .map((turn) => turn.debugText)
+    .find(Boolean) || runtime.debugText || ''
   const lines = [
     `# Case Debug: ${caseInfo.title || caseInfo.id}`,
     '',
@@ -158,7 +193,11 @@ async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
     '',
     ...turnRecords.map((turn) => `- Turn ${turn.index}: ${turn.status}${turn.runtimeStatus ? ` (runtime: ${turn.runtimeStatus})` : ''}`),
     '',
-    '## AssistantRuntime Evidence',
+    '## AssistantRuntime Debug Log',
+    '',
+    detailedTranscript || 'No detailed AssistantRuntime entries were available.',
+    '',
+    '## Runtime Snapshots',
     '',
     '```json',
     JSON.stringify({ final: runtime, turns: turnRecords.map((turn) => ({
@@ -202,6 +241,7 @@ async function runCase(page, testCase, index) {
       runtime = after
       turn.runtimeAfter = after
       turn.runtimeStatus = after.status
+      turn.debugText = after.debugText || ''
       turn.status = after.status
       turn.endedAt = new Date().toISOString()
       await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}.png`), fullPage: true })
@@ -209,6 +249,7 @@ async function runCase(page, testCase, index) {
       turn.error = error.message
       turn.runtimeAfter = await readRuntime(page)
       turn.runtimeStatus = turn.runtimeAfter.status || null
+      turn.debugText = turn.runtimeAfter.debugText || ''
       turn.endedAt = new Date().toISOString()
       await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}-error.png`), fullPage: true }).catch(() => {})
     }
@@ -224,6 +265,7 @@ async function runCase(page, testCase, index) {
   result.endedAt = new Date().toISOString()
   result.runtimeAvailable = runtime.available
   result.runtimeTranscript = runtime.transcript
+  result.runtimeDebugTranscript = runtime.debugText || turnRecords.findLast((turn) => turn.debugText)?.debugText || null
   fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
   await writeCaseDebug(caseDir, testCase, runtime, result.turns)
   return result

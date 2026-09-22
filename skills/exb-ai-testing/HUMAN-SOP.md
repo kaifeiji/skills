@@ -145,7 +145,7 @@ The runtime transcript should be captured from `window._assistantRuntime.debugTr
 - `result.json`
 - any runtime signal showing `completed` / `failed` state
 
-Review the per-turn runtime evidence in `case-debug.md`. A `timeout` means a transcript was present without a recognized terminal status; `runtime-unavailable` means the page exposed the runtime object but no transcript. These states are recorded as evidence gaps, not successful turns.
+Review the detailed per-turn transcript in `case-debug.md`, including message metadata and each debug entry's section, title, timestamp, and content. A `timeout` means a transcript was present without a recognized terminal status; `runtime-unavailable` means the page exposed the runtime object but no transcript. These states are recorded as evidence gaps, not successful turns.
 
 If `window._assistantRuntime` is unavailable after a case has actually run, record that fact in that case's debug evidence. Create `case-debug.md` after the case has executed.
 
