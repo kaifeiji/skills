@@ -52,7 +52,7 @@ node tooling/run-cases.mjs \
 	--output artifacts/<run-name>
 ```
 
-The Agent prepares and reviews the cases first. The runner then uses Playwright `chromium` directly, executes all turns in order, and writes `summary.json` plus per-case `result.json`, `case-debug.md`, and screenshots. Each case gets a fresh page; startup errors are recorded in that case's artifacts. Use `--case <case-id>` for a focused run and `--storage-state <path>` for an authenticated session. Config stores app and case data; locator candidates are owned by the runner. The Agent creates `analysis.md` and the report after the run artifacts exist.
+The Agent prepares and reviews the cases first. The runner then uses Playwright `chromium` directly, executes all turns in order, and writes `summary.json` plus per-case `result.json`, `case-debug.md`, and screenshots. Each case gets a fresh page; startup errors are recorded in that case's artifacts. Use `--case <case-id>` for a focused run. The config carries the required shared `storageState`; an explicit `--storage-state <path>` can override it. Config stores app, case, and session-state references; locator candidates are owned by the runner. The Agent creates `analysis.md` and the report after the run artifacts exist.
 
 Config preparation accepts the app URL, shared session state, and derives the slug from the page title:
 
@@ -62,7 +62,7 @@ node tooling/prepare-config-and-prompts.mjs \
 	--storage-state config/.auth/local-exb.json
 ```
 
-For authenticated apps, capture the state in the dedicated Playwright Chromium window and pass it into preparation:
+Capture the shared state in the dedicated Playwright Chromium window and pass it into preparation:
 
 ```bash
 node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json

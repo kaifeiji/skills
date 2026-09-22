@@ -1,6 +1,7 @@
 {
   "slug": "explore-san-diego",
   "url": "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places",
+  "storageState": "config/.auth/local-exb.json",
   "startup": {
     "openChat": true,
     "viewport": "desktop-large",
