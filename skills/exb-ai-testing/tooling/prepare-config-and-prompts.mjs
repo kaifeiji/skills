@@ -2,17 +2,34 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import process from 'node:process'
+import { createRequire } from 'node:module'
+
+const require = createRequire(path.join(process.cwd(), 'package.json'))
+const { chromium } = require('@playwright/test')
 
 const args = process.argv.slice(2)
-const appSlug = args[0]
-const appUrl = args[1]
-const output = args[2] || `config/${appSlug || 'app'}.json`
+const appUrl = args[0]
+const outputArg = args[1]
 
-if (!appSlug || !appUrl) {
-  console.error('Usage: node tooling/prepare-config-and-prompts.mjs <app-slug> <app-url> [output-file]')
-  console.error('Example: node tooling/prepare-config-and-prompts.mjs explore-san-diego https://example.com/experience/demo config/explore-san-diego.json')
+if (!appUrl) {
+  console.error('Usage: node tooling/prepare-config-and-prompts.mjs <app-url> [output-file]')
+  console.error('Example: node tooling/prepare-config-and-prompts.mjs https://example.com/experience/demo config/app.json')
   process.exit(1)
 }
+
+const browser = await chromium.launch({ headless: true })
+const page = await browser.newPage()
+let appTitle
+try {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  appTitle = await page.title()
+} finally {
+  await browser.close()
+}
+
+const appSlug = slugify(appTitle)
+const output = outputArg || `config/${appSlug}.json`
 
 const outDir = path.dirname(output)
 fs.mkdirSync(outDir, { recursive: true })
@@ -40,4 +57,16 @@ const config = {
 
 fs.writeFileSync(output, JSON.stringify(config, null, 2) + '\n')
 console.log(`[prepare-config-and-prompts] Wrote config to: ${output}`)
-console.log('[prepare-config-and-prompts] This step prepares both the app config and the prompt suite together.')
+console.log(`[prepare-config-and-prompts] App title: ${appTitle}`)
+console.log(`[prepare-config-and-prompts] Generated app slug: ${appSlug}`)
+console.log('[prepare-config-and-prompts] Agent handoff required: add and review suite.cases before script execution.')
+
+function slugify(title) {
+  const slug = title
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'app'
+}

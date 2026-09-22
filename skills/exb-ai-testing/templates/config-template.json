@@ -1,5 +1,5 @@
 {
-  "slug": "<app-slug>",
+  "slug": "<generated-from-app-title>",
   "url": "https://<app-url>",
   "startup": {
     "openChat": true,
@@ -9,7 +9,7 @@
   },
   "suite": {
     "suiteName": "<suite-name>",
-    "appSlug": "<app-slug>",
+    "appSlug": "<generated-from-app-title>",
     "generatedAt": "<ISO-8601 timestamp>",
     "sourceNotes": [
       "Describe the app purpose, key pages, and domain-specific terms.",

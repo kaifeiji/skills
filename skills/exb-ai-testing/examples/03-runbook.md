@@ -25,19 +25,13 @@ Check:
 
 If the app cannot be reached or the chat is not visible, stop before running the test.
 
-## Step 2: Create or update the app config
+## Step 2: Create the app config
 
-Use the real app slug and URL:
+Read the app title in Chromium and let the preparation script derive the slug:
 
-```json
-{
-  "slug": "explore-san-diego",
-  "url": "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places",
-  "suite": {
-    "suiteName": "explore-san-diego-adjacent-risks",
-    "appSlug": "explore-san-diego"
-  }
-}
+```bash
+node tooling/prepare-config-and-prompts.mjs \
+  "https://experiencedev.arcgis.com/experience/4644d725216a490a9074fd096d4b1608/?views=Fun-places"
 ```
 
 This matches the app's actual context and the real run pattern.
@@ -53,16 +47,21 @@ Use the real examples from the app context:
 
 The suite should reflect the actual app's capabilities and avoid over-generalized prompts.
 
-## Step 4: Run the visible Playwright evaluation
+## Step 4: Run the scripted Chromium evaluation
+
+Use the generated config with the bundled runner:
 
 ```bash
-TEST_CONFIG=config/explore-san-diego.json npm run test:e2e:visible
+node tooling/run-cases.mjs \
+  --config config/<generated-app-slug>.json \
+  --mode headed \
+  --output artifacts/<run-name>
 ```
 
 Expected output location:
 
 ```text
-artifacts/playwright/<YYYYMMDD-explore-san-diego>/
+artifacts/<YYYYMMDD-explore-san-diego>/
 ```
 
 Artifacts to verify after the run:
@@ -72,20 +71,12 @@ Artifacts to verify after the run:
 - debug transcript if available
 - no empty or partial evidence set
 
-## Step 5: Validate the run
-
-```bash
-npm run validate-run -- artifacts/playwright/<run-name>
-```
-
-If validation fails, do not proceed to report generation.
-
-## Step 6: Analyze the evidence
+## Step 5: Analyze the evidence
 
 Write the Chinese conclusions to:
 
 ```text
-artifacts/playwright/<run-name>/analysis.md
+artifacts/<run-name>/analysis.md
 ```
 
 The analysis should call out:
@@ -96,11 +87,10 @@ The analysis should call out:
 - whether it invented unsupported details
 - whether the result was presented appropriately
 
-## Step 7: Build the final report
+## Step 6: Build the final report
 
 ```bash
-npm run build-report -- artifacts/playwright/<run-name>
-npm run show-report -- <run-name>
+node tooling/build-report.mjs artifacts/<run-name>
 ```
 
 This report should render the summary, screenshots, and run evidence in one place.

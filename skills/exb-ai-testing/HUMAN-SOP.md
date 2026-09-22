@@ -4,30 +4,31 @@
 
 Use a real app as an AI Chat testing target, generate a prompt suite from app context, run a visible Playwright validation, analyze the evidence, and publish a report.
 
-This workflow is self-contained in this skill; it does not depend on an external project or repository.
+This workflow is self-contained in this skill bundle. It runs against the target app and writes evidence to the chosen output root.
 
 ## Input
 
-Only these three inputs must be confirmed up front:
+Confirm the following in plain language:
 
-- app URL
-- execution mode: headed or headless
-- output root for artifacts and reports
+- App 地址
+- 是否显示浏览器窗口（默认显示）
+- 结果保存位置（默认 `artifacts`）
+- 测试重点（可选）
 
-Optional: the user may also provide a test focus or concern area. If they do, prioritize that lens during prompt generation and analysis. If they do not, use the default prompt-generation rules and coverage template.
+Optional: the user may provide a test focus or concern area. Apply that lens during prompt generation and analysis; otherwise use the default prompt-generation rules and coverage template.
 
 ## App slug naming
 
-Use a lowercase kebab-case slug such as:
+Read the app title from the loaded page and convert it to a lowercase kebab-case slug, such as:
 
 - explore-san-diego
 - central-province
 - nycity-map
 - wildfire-intel
 
-Do not use spaces, uppercase letters, underscores, or special characters.
+Use lowercase letters and hyphens in the slug; omit spaces, underscores, and other punctuation.
 
-The slug must match the config filename, run folder name, and artifact naming.
+The slug is generated from the page title and matches the config filename, run folder name, and artifact naming.
 
 ## Environment preparation
 
@@ -49,11 +50,9 @@ If the app requires a visible browser session, make sure the machine has a worki
 
 ## Step 1: Confirm the front-door decision and check app availability
 
-Before running, confirm only these three things:
+Before running, confirm the App 地址. If the user does not specify otherwise, show the browser window and save results under `artifacts`.
 
-- app URL
-- headed or headless mode
-- output root
+Keep `headed` and `headless` as internal runner settings; the user-facing choice is whether the browser window is visible.
 
 Then:
 
@@ -68,7 +67,13 @@ The remaining values—slug, run name, auth handling, config generation, report 
 
 ## Step 2: Prepare config and prompt suite together
 
-Create or update `config/<app-slug>.json` and generate the prompt suite in the same step.
+Open the app in Chromium, read `document.title`, generate the slug, then create or update `config/<app-slug>.json` and generate the prompt suite in the same step.
+
+The bundled preparation command accepts the app URL and derives the slug automatically:
+
+```bash
+node tooling/prepare-config-and-prompts.mjs https://<app-url>
+```
 
 Use the slug consistently in the config filename and in the final run folder name.
 
@@ -81,39 +86,42 @@ The file should contain:
 
 Keep the configuration focused on the app target and test suite only. Keep auth/session separate.
 
-This is one combined step: config generation and prompt generation happen together.
+This is the Agent-to-script handoff. Before starting the runner, confirm that every case has an id, intent, turns, expected behavior, and watch-for list.
 
-## Step 3: Run the visible Playwright evaluation
+## Step 3: Run the scripted Chromium evaluation
 
-Use the visible/headed Playwright mode as the main evaluation path.
+Use the bundled runner as the main evaluation path. It launches Chromium directly and drives configured turns with Playwright. There is no VS Code tab or model-operated browser step in this workflow.
 
 ```bash
-TEST_CONFIG=config/<app>.json npm run test:e2e:visible
+node tooling/run-cases.mjs \
+	--config config/<app>.json \
+	--mode headed \
+	--output artifacts/<run-name>
 ```
 
-Use headless mode only as a quick smoke check or regression shortcut, not as the primary evidence source.
+Use `--mode headless` for a quick smoke check or regression shortcut; use the visible mode for primary evidence. Add `--case <case-id>` for a focused run.
 
-If you prefer the skill-local version, run the bundled scripts from `tooling/`.
+The runner owns all DOM locator candidates. Config contains app and case data, while locator candidates stay in the runner. Each case starts in a fresh page. Startup failures are recorded under that case and the runner continues with the next case.
 
 This should create artifacts under:
 
 ```text
-artifacts/playwright/<YYYYMMDD-app-slug>-<sequence>/
+artifacts/<YYYYMMDD-app-slug>-<sequence>/
 ```
 
 Example:
 
 ```text
-artifacts/playwright/20260922-explore-san-diego-01/
+artifacts/20260922-explore-san-diego-01/
 ```
 
 Validate that screenshots, result files, and debug evidence are present.
 
-## Step 4: Capture runtime debug evidence
+## Step 4: Agent reviews runtime debug evidence
 
-Before analysis, extract the AssistantRuntime debug transcript from each case.
+The runner extracts the AssistantRuntime debug transcript from each case while it runs. Review the generated files instead of manually driving another browser session.
 
-This is required because the original ai-testing workflow treats the runtime transcript as the internal debug source for turn completion and failure analysis.
+The runtime transcript is the internal debug source for turn completion and failure analysis.
 
 The runtime transcript should be captured from `window._assistantRuntime.debugTranscript`, and each case should keep:
 
@@ -122,16 +130,16 @@ The runtime transcript should be captured from `window._assistantRuntime.debugTr
 - `result.json`
 - any runtime signal showing `completed` / `failed` state
 
-If `window._assistantRuntime` is unavailable, record that fact in `case-debug.md` and continue with the visible screenshot evidence.
+If `window._assistantRuntime` is unavailable after a case has actually run, record that fact in that case's debug evidence. Create `case-debug.md` after the case has executed.
 
-## Step 5: Analyze the evidence
+## Step 5: Agent analyzes the evidence
 
-Use the run artifacts to write `analysis.md`.
+After the run has produced real artifacts, use them to write `analysis.md`; this file is created during evidence analysis.
 
-When building the final report, prefer the skill-local Node tooling; validation is included in the same step:
+When building the final report, use the bundled Node tooling:
 
 ```bash
-node tooling/build-report.mjs artifacts/playwright/<run-name>
+node tooling/build-report.mjs artifacts/<run-name>
 ```
 
 The analysis should explain:
@@ -144,10 +152,10 @@ The analysis should explain:
 - evidence used
 - user-visible impact
 
-## Step 6: Build and open the report
+## Step 6: Agent builds and opens the report
 
 ```bash
-node tooling/build-report.mjs artifacts/playwright/<run-name>
+node tooling/build-report.mjs artifacts/<run-name>
 ```
 
 If a local HTML viewer or launcher is available, open the generated report directory afterward.

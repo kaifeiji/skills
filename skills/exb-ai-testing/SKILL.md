@@ -1,19 +1,22 @@
 ---
 name: exb-ai-testing
-description: "App-aware AI Chat testing workflow for Experience Builder apps: validate session and app state, generate a prompt suite, run visible Playwright checks, capture AssistantRuntime debug evidence, analyze artifacts, and package the final report."
+description: "App-aware AI Chat testing workflow for Experience Builder apps: validate session and app state, generate a prompt suite, run scripted Chromium Playwright cases, capture AssistantRuntime debug evidence, analyze artifacts, and package the final report."
 ---
 
 # EXB AI Testing
 
 Use this skill to evaluate a real Experience Builder app's AI Chat quality in a repeatable, evidence-driven way.
 
-## Required HITL input
+## HITL input
 
-Before execution, the user only needs to provide:
+Ask the user in plain language:
 
-- app URL
-- execution mode: `headed` or `headless`
-- output root for artifacts and reports
+- **App 地址**：必填
+- **是否显示浏览器窗口**：可选，默认显示
+- **结果保存位置**：可选，默认 `artifacts`
+- **测试重点**：可选，例如地图筛选、数据源选择或导航
+
+Translate “显示浏览器窗口” to the internal runner mode; use the visible browser by default and use background execution only for an explicit smoke check.
 
 ## Optional focus area
 
@@ -30,16 +33,17 @@ If absent, apply the default prompt-generation rules from the template.
 
 ## Default rules
 
-- auto-generate a stable kebab-case app slug
+- read the app title in Chromium and generate a stable kebab-case app slug from it
 - keep auth/session separate from config and report output
 - generate config and prompt suite together by default
 - generate run name as `YYYYMMDD-app-slug-seq`
 - generate `analysis.md` and report in the standard run folder
-- use headed mode as the main evidence path
-- use headless mode only as a smoke check
+- show the browser window for the main evidence run
+- use background execution for smoke checks
 
 ## App slug rules
 
+- derive the slug automatically from the loaded app's `document.title`
 - lowercase only
 - kebab-case only
 - no spaces, underscores, or punctuation
@@ -68,21 +72,31 @@ Bundled references and helpers:
 - [prompt-generator-template.md](./templates/prompt-generator-template.md)
 - [prepare-config-and-prompts.mjs](./tooling/prepare-config-and-prompts.mjs)
 - [capture-session.mjs](./tooling/capture-session.mjs)
+- [run-cases.mjs](./tooling/run-cases.mjs)
 - [build-report.mjs](./tooling/build-report.mjs)
 
 ## Workflow
 
-1. Validate URL and app availability
-2. Validate session/auth readiness
-3. Prepare config and prompt suite together
-4. Run visible Playwright evaluation
-5. Capture `window._assistantRuntime.debugTranscript` and `case-debug.md`
-6. Analyze evidence and write `analysis.md`
-7. Build the final HTML report
+1. Agent validates URL and app/session readiness
+2. Agent reads the app title and prepares the config and reviewed prompt cases
+3. Agent hands the reviewed config to the script runner
+4. Script runner executes Chromium cases and writes evidence
+5. Agent reviews evidence and writes `analysis.md`
+6. Agent builds the final HTML report
+
+## Agent and script handoff
+
+The workflow has explicit ownership boundaries:
+
+- **Agent phase**: talk to the user, inspect app context, derive the slug, create realistic cases, confirm case intent, and choose the output directory.
+- **Script phase**: receive a reviewed config, launch Chromium, execute `suite.cases[].turns[]` in order, isolate cases in separate pages, and write screenshots, `result.json`, `case-debug.md`, and `summary.json`.
+- **Agent phase after execution**: read the artifacts, classify findings, write `analysis.md`, and invoke the report builder.
+
+The script runner executes cases; it does not generate prompts or decide what the app should be tested for. A config with no cases is an incomplete Agent-to-script handoff.
 
 ## Runtime debug capture contract
 
-This skill explicitly covers the original `assistantRuntime` debug extraction pattern.
+The runner uses the app's `assistantRuntime` debug transcript as internal execution evidence.
 
 Required runtime evidence:
 
@@ -99,14 +113,39 @@ The workflow must:
 4. keep screenshots and `result.json` alongside the runtime transcript
 5. use the transcript as supporting evidence; screenshots remain primary evidence for user-visible claims
 
-If no runtime entries are available, write a placeholder `case-debug.md` explaining the absence of runtime debug instead of silently omitting the file.
+If no runtime entries are available after a real case was executed, include that absence in the case's actual debug record. Create `case-debug.md`, `analysis.md`, and the report only at their respective execution and analysis stages.
+
+## Scripted case runner contract
+
+Run configured cases through the bundled runner:
+
+```bash
+node tooling/run-cases.mjs \
+	--config config/<app-slug>.json \
+	--mode headed \
+	--output artifacts/<run-name>
+```
+
+The runner must:
+
+- launch Playwright's `chromium` directly as the browser control surface
+- execute `suite.cases[].turns[]` in order and continue to the next case after a case failure
+- use the built-in locator candidates; locator ownership stays inside the runner
+- accept `--case <case-id>` for a focused run and `--storage-state <path>` for an authenticated session
+- write `summary.json` at the run root
+- after a case starts, write its `result.json`, `case-debug.md`, and turn screenshots; startup failures receive a case-level error artifact
+
+If built-in locators cannot find the chat UI, preserve the failure artifacts and report the harness limitation. Browser interaction stays with the runner and config remains focused on app and case data.
 
 ## Output contract
 
 - `config/<app-slug>.json`
-- `artifacts/playwright/<run-name>/`
-- `analysis.md`
-- report under `report/index.html`
+- `artifacts/<run-name>/`
+- `artifacts/<run-name>/summary.json`
+- `artifacts/<run-name>/<case-id>/result.json`
+- `artifacts/<run-name>/<case-id>/case-debug.md`
+- `analysis.md` after evidence analysis
+- report under `report/index.html` after analysis is complete
 
 ## Report expectations
 
@@ -126,6 +165,6 @@ The workflow is complete when:
 - app/session is valid
 - prompt suite is generated
 - run evidence is present
-- `case-debug.md` exists for each case
-- `analysis.md` is populated
-- HTML report is built successfully
+- `case-debug.md` exists for each executed case
+- `analysis.md` is populated after the run
+- HTML report is built successfully after analysis

@@ -2,7 +2,7 @@
 
 You are generating a realistic, exploratory AI Chat test suite for a real app.
 
-Return only valid JSON matching the app config structure. Do not wrap it in markdown fences.
+Return valid JSON matching the app config structure, with no markdown fences.
 
 ## Inputs
 
@@ -27,7 +27,7 @@ Use the following app-specific context:
 - If no focus area is supplied, use the default prompt-generation coverage below.
 - Include explicit checks for map state, data source choice, and continuation across turns.
 - Avoid repeating known failures verbatim; use nearby variants instead.
-- Do not assume hidden features or capabilities that are not evidenced by the app.
+- Base capabilities on features evidenced by the app.
 
 ## Required JSON structure
 
@@ -77,4 +77,4 @@ Return only JSON. Every case must have:
 - `watchFor`
 - `tags`
 
-Do not include markdown fences, comments, or explanatory prose.
+The response contains JSON only: no markdown fences, comments, or explanatory prose.
