@@ -242,6 +242,7 @@ try {
     const page = await context.newPage()
     try {
       await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: readyTimeout })
+      await waitForNetworkIdle(page)
       if (config.startup?.openChat) {
         const openChat = await findVisibleLocator(page, selectors.openChat, readyTimeout)
         if (openChat) await openChat.click()
@@ -276,6 +277,14 @@ try {
 } finally {
   await context.close()
   await browser.close()
+}
+
+async function waitForNetworkIdle(page) {
+  try {
+    await page.waitForLoadState('networkidle', { timeout: readyTimeout })
+  } catch {
+    console.log('[run-cases] Network idle was not reached; continuing with the configured UI readiness check.')
+  }
 }
 
 const summary = {

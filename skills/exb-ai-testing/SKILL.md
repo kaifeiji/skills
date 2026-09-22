@@ -16,7 +16,7 @@ Ask the user in plain language:
 - **结果保存位置**：可选，默认 `artifacts`
 - **测试重点**：可选，例如地图筛选、数据源选择或导航
 
-Translate “显示浏览器窗口” to the internal runner mode; use the visible browser by default and use background execution only for an explicit smoke check.
+Use the visible browser by default. The runner keeps execution mode internal.
 
 ## Optional focus area
 
@@ -99,6 +99,8 @@ The session source is the Playwright Chromium window opened by the skill. Prompt
 
 Session handoff is required before prompt preparation or case execution. The preparation script and runner both stop before browser work when no storage state is supplied.
 
+Each browser phase waits for Playwright `networkidle` with a bounded timeout before checking the app UI. Apps with persistent connections continue through the UI readiness check when network idle is not reached.
+
 ## Runtime debug capture contract
 
 The runner uses the app's `assistantRuntime` debug transcript as internal execution evidence.
@@ -129,7 +131,6 @@ Run configured cases through the bundled runner:
 ```bash
 node tooling/run-cases.mjs \
 	--config config/<app-slug>.json \
-	--mode headed \
 	--output artifacts/<run-name>
 ```
 

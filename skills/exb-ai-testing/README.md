@@ -26,7 +26,7 @@ npx skills add <repository-url> --skill exb-ai-testing --global
 
 ## Usage
 
-Use the skill with the App 地址. By default it shows the browser window and saves results under `artifacts`. A test focus and alternate save location are optional. `headed` and `headless` remain internal runner settings.
+Use the skill with the App 地址. It shows the browser window by default and saves results under `artifacts`. A test focus and alternate save location are optional. Browser execution mode remains internal.
 
 ## Default behavior
 
@@ -48,7 +48,6 @@ After preparing a config and prompt suite, run cases with the skill-local runner
 ```bash
 node tooling/run-cases.mjs \
 	--config config/<app-slug>.json \
-	--mode headed \
 	--output artifacts/<run-name>
 ```
 
@@ -72,3 +71,7 @@ node tooling/prepare-config-and-prompts.mjs \
 ```
 
 The generated config carries the same `storageState` to the runner. Prompt inspection and case execution therefore share one session source. Ask AI is located by the stable `assistant-anchor` class before language-dependent attributes.
+
+If `config/.auth/local-exb.json` already exists, the next session capture reuses it before refreshing the file. Config preparation also uses this path by default, so subsequent runs continue with the saved session.
+
+The session, preparation, and case runner each wait for network idle with a bounded timeout before UI checks; persistent app connections use the UI readiness fallback.

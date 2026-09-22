@@ -52,7 +52,7 @@ If the app requires a visible browser session, make sure the machine has a worki
 
 Before running, confirm the App 地址. If the user does not specify otherwise, show the browser window and save results under `artifacts`.
 
-Keep `headed` and `headless` as internal runner settings; the user-facing choice is whether the browser window is visible.
+Use the visible browser by default; execution mode stays internal to the runner.
 
 For an authenticated app, capture the shared state with the bundled helper:
 
@@ -61,6 +61,10 @@ node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json
 ```
 
 Complete sign-in in the Playwright Chromium window opened by this command. The browser stays open during sign-in; type `READY` in the terminal only after the app is fully loaded. The helper verifies the Ask AI/chat UI before replacing the session file, so an invalid state is not saved.
+
+When `config/.auth/local-exb.json` already exists, the helper loads it into the new Chromium context first and refreshes that same state file after successful verification.
+
+The helper waits for network idle before presenting the READY prompt and again after sign-in, then confirms the Ask AI/chat UI.
 
 Then:
 
@@ -85,6 +89,8 @@ node tooling/prepare-config-and-prompts.mjs \
 	--storage-state config/.auth/local-exb.json
 ```
 
+With the default `config/.auth/local-exb.json` location, the explicit `--storage-state` argument can be omitted.
+
 Use the slug consistently in the config filename and in the final run folder name.
 
 The file should contain:
@@ -105,13 +111,12 @@ Use the bundled runner as the main evaluation path. It launches Chromium directl
 ```bash
 node tooling/run-cases.mjs \
 	--config config/<app>.json \
-	--mode headed \
 	--output artifacts/<run-name>
 ```
 
-Use `--mode headless` for a quick smoke check or regression shortcut; use the visible mode for primary evidence. Add `--case <case-id>` for a focused run.
+Add `--case <case-id>` for a focused run.
 
-The runner owns all DOM locator candidates. It opens Ask AI with the stable `assistant-anchor` class before language-dependent fallbacks. Config contains app, case data, and the shared `storageState` path, while locator candidates stay in the runner. Each case starts in a fresh page with the same state. Startup failures are recorded under that case and the runner continues with the next case.
+The runner waits for network idle before each case, then checks the UI. It opens Ask AI with the stable `assistant-anchor` class before language-dependent fallbacks. Config contains app, case data, and the shared `storageState` path, while locator candidates stay in the runner. Each case starts in a fresh page with the same state. Startup failures are recorded under that case and the runner continues with the next case.
 
 This should create artifacts under:
 

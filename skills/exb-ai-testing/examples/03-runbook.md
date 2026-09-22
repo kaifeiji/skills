@@ -51,7 +51,6 @@ Use the generated config with the bundled runner:
 ```bash
 node tooling/run-cases.mjs \
   --config config/<generated-app-slug>.json \
-  --mode headed \
   --output artifacts/<run-name>
 ```
 

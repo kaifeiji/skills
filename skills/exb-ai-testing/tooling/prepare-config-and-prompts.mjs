@@ -12,7 +12,9 @@ const args = process.argv.slice(2)
 const appUrl = args[0]
 const outputArg = args[1]
 const storageStateIndex = args.indexOf('--storage-state')
-const storageState = storageStateIndex === -1 ? undefined : args[storageStateIndex + 1]
+const storageState = storageStateIndex === -1
+  ? process.env.STORAGE_STATE || 'config/.auth/local-exb.json'
+  : args[storageStateIndex + 1]
 
 if (!appUrl) {
   console.error('Usage: node tooling/prepare-config-and-prompts.mjs <app-url> [output-file] --storage-state <path>')
@@ -38,6 +40,7 @@ const page = await context.newPage()
 let appTitle
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await waitForNetworkIdle(page)
   appTitle = await page.title()
 } finally {
   await context.close()
@@ -86,4 +89,12 @@ function slugify(title) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return slug || 'app'
+}
+
+async function waitForNetworkIdle(page) {
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 30_000 })
+  } catch {
+    console.log('[prepare-config-and-prompts] Network idle was not reached; continuing after the bounded wait.')
+  }
 }

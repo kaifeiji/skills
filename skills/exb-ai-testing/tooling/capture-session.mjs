@@ -21,16 +21,22 @@ console.log('[capture-session] Complete sign-in in this Playwright Chromium wind
 const outDir = path.dirname(output)
 fs.mkdirSync(outDir, { recursive: true })
 const temporaryOutput = `${output}.tmp`
+const hasExistingState = isStorageStateFile(output)
 
 console.log(`[capture-session] Opening visible browser for: ${url}`)
 console.log(`[capture-session] Saving authenticated state to: ${output}`)
+if (hasExistingState) console.log('[capture-session] Reusing the existing storage state and refreshing it after sign-in.')
 
 const browser = await chromium.launch({ headless: false })
-const context = await browser.newContext({ ignoreHTTPSErrors: true })
+const context = await browser.newContext({
+  ignoreHTTPSErrors: true,
+  ...(hasExistingState ? { storageState: output } : {}),
+})
 const page = await context.newPage()
 
 try {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
+  await waitForNetworkIdle(page, 'initial app load')
   console.log('[capture-session] Browser is ready. Complete sign-in and any required app flow in this window.')
   console.log('[capture-session] The browser stays open while you sign in.')
 
@@ -46,6 +52,7 @@ try {
   }
   rl.close()
 
+  await waitForNetworkIdle(page, 'post-login app load')
   await waitForSessionReady(page)
   await context.storageState({ path: temporaryOutput })
   fs.renameSync(temporaryOutput, output)
@@ -53,6 +60,17 @@ try {
 } finally {
   if (fs.existsSync(temporaryOutput)) fs.rmSync(temporaryOutput)
   await browser.close()
+}
+
+function isStorageStateFile(filePath) {
+  if (!fs.existsSync(filePath)) return false
+  try {
+    const state = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    return Boolean(state && Array.isArray(state.cookies) && Array.isArray(state.origins))
+  } catch {
+    console.log(`[capture-session] Existing storage state is not valid JSON; starting a clean session and replacing it after verification.`)
+    return false
+  }
 }
 
 async function waitForSessionReady(page) {
@@ -72,4 +90,12 @@ async function waitForSessionReady(page) {
     await page.waitForTimeout(500)
   }
   throw new Error('Session was not verified: the app did not expose its Ask AI or chat UI after sign-in.')
+}
+
+async function waitForNetworkIdle(page, phase) {
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 30_000 })
+  } catch {
+    console.log(`[capture-session] Network idle was not reached during ${phase}; continuing with the app UI readiness check.`)
+  }
 }
