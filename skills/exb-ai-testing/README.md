@@ -62,7 +62,7 @@ node tooling/prepare-config-and-prompts.mjs \
 	--storage-state config/.auth/local-exb.json
 ```
 
-Capture the shared state in the dedicated Playwright Chromium window and pass it into preparation:
+Capture the shared state in the dedicated Playwright Chromium window, wait for the app to finish loading, then type `READY` in the terminal. The helper verifies the Ask AI/chat UI and writes the state through a temporary file, so an invalid session does not replace the saved state:
 
 ```bash
 node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json

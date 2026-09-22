@@ -60,7 +60,7 @@ For an authenticated app, capture the shared state with the bundled helper:
 node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json
 ```
 
-Complete sign-in in the Playwright Chromium window opened by this command, then press Enter in the terminal. This state becomes the shared session source for prompt inspection and case execution.
+Complete sign-in in the Playwright Chromium window opened by this command. The browser stays open during sign-in; type `READY` in the terminal only after the app is fully loaded. The helper verifies the Ask AI/chat UI before replacing the session file, so an invalid state is not saved.
 
 Then:
 
@@ -139,6 +139,8 @@ The runtime transcript should be captured from `window._assistantRuntime.debugTr
 - screenshots for each turn
 - `result.json`
 - any runtime signal showing `completed` / `failed` state
+
+Review the per-turn runtime evidence in `case-debug.md`. A `timeout` means a transcript was present without a recognized terminal status; `runtime-unavailable` means the page exposed the runtime object but no transcript. These states are recorded as evidence gaps, not successful turns.
 
 If `window._assistantRuntime` is unavailable after a case has actually run, record that fact in that case's debug evidence. Create `case-debug.md` after the case has executed.
 

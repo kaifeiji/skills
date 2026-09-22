@@ -100,21 +100,33 @@ async function readRuntime(page) {
     return {
       available: true,
       transcript: runtime.debugTranscript ?? null,
+      runtimeKeys: Object.keys(runtime),
     }
   }).catch((error) => ({ available: false, transcript: null, error: error.message }))
 }
 
-function transcriptText(transcript) {
-  if (transcript == null) return 'No runtime debug transcript was available.'
-  return JSON.stringify(transcript, null, 2)
-}
-
 function terminalStatus(transcript) {
-  const values = Array.isArray(transcript) ? transcript : [transcript]
-  return values
-    .reverse()
-    .map((entry) => entry && typeof entry === 'object' ? entry.status : null)
-    .find((status) => status === 'completed' || status === 'failed') || null
+  const statuses = []
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+    } else if (value && typeof value === 'object') {
+      if (typeof value.status === 'string') statuses.push(value.status.toLowerCase())
+      Object.values(value).forEach((child) => {
+        if (child && typeof child === 'object') visit(child)
+      })
+    }
+  }
+  visit(transcript)
+  return statuses.reverse().find((status) => [
+    'completed',
+    'complete',
+    'done',
+    'success',
+    'failed',
+    'failure',
+    'error',
+  ].includes(status)) || null
 }
 
 async function waitForTurn(page, before, turnStartedAt) {
@@ -126,7 +138,12 @@ async function waitForTurn(page, before, turnStartedAt) {
     if (changed && status) return { ...runtime, status }
     await page.waitForTimeout(500)
   }
-  return { ...(await readRuntime(page)), status: 'timeout', turnStartedAt }
+  const runtime = await readRuntime(page)
+  return {
+    ...runtime,
+    status: runtime.transcript == null ? 'runtime-unavailable' : 'timeout',
+    turnStartedAt,
+  }
 }
 
 async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
@@ -139,12 +156,16 @@ async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
     '',
     '## Turn Status',
     '',
-    ...turnRecords.map((turn) => `- Turn ${turn.index}: ${turn.status}`),
+    ...turnRecords.map((turn) => `- Turn ${turn.index}: ${turn.status}${turn.runtimeStatus ? ` (runtime: ${turn.runtimeStatus})` : ''}`),
     '',
-    '## AssistantRuntime Transcript',
+    '## AssistantRuntime Evidence',
     '',
     '```json',
-    transcriptText(runtime.transcript),
+    JSON.stringify({ final: runtime, turns: turnRecords.map((turn) => ({
+      index: turn.index,
+      runtimeBefore: turn.runtimeBefore,
+      runtimeAfter: turn.runtimeAfter,
+    })) }, null, 2),
     '```',
   ]
   if (runtime.error) lines.splice(4, 0, `- Runtime read error: ${runtime.error}`)
@@ -169,6 +190,7 @@ async function runCase(page, testCase, index) {
     const prompt = testCase.turns[turnIndex]
     const turnStartedAt = new Date().toISOString()
     const turn = { index: turnIndex + 1, prompt, startedAt: turnStartedAt, status: 'failed' }
+    turn.runtimeBefore = runtime
     try {
       const input = await findVisibleLocator(page, selectors.chatInput, readyTimeout)
       if (!input) throw new Error('Chat input was not found using the built-in Playwright locators.')
@@ -178,11 +200,15 @@ async function runCase(page, testCase, index) {
       else await input.press('Enter')
       const after = await waitForTurn(page, runtime, turnStartedAt)
       runtime = after
+      turn.runtimeAfter = after
+      turn.runtimeStatus = after.status
       turn.status = after.status
       turn.endedAt = new Date().toISOString()
       await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}.png`), fullPage: true })
     } catch (error) {
       turn.error = error.message
+      turn.runtimeAfter = await readRuntime(page)
+      turn.runtimeStatus = turn.runtimeAfter.status || null
       turn.endedAt = new Date().toISOString()
       await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}-error.png`), fullPage: true }).catch(() => {})
     }
@@ -190,7 +216,11 @@ async function runCase(page, testCase, index) {
     fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
   }
 
-  result.status = result.turns.some((turn) => turn.status === 'failed' || turn.status === 'timeout') ? 'failed' : 'completed'
+  result.status = result.turns.some((turn) => [
+    'failed',
+    'timeout',
+    'runtime-unavailable',
+  ].includes(turn.status)) ? 'failed' : 'completed'
   result.endedAt = new Date().toISOString()
   result.runtimeAvailable = runtime.available
   result.runtimeTranscript = runtime.transcript

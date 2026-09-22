@@ -18,7 +18,7 @@ node tooling/capture-session.mjs \
   config/.auth/local-exb.json
 ```
 
-Complete sign-in and app readiness in the Playwright Chromium window, then press Enter in the terminal. The same state is reused for prompt inspection and case execution.
+Complete sign-in and app readiness in the Playwright Chromium window. Type `READY` in the terminal only after the app is fully loaded. The helper verifies the Ask AI/chat UI before saving. The same state is reused for prompt inspection and case execution.
 
 ## Step 2: Validate app access and create the app config
 

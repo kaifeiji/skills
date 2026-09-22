@@ -20,6 +20,7 @@ console.log('[capture-session] Complete sign-in in this Playwright Chromium wind
 
 const outDir = path.dirname(output)
 fs.mkdirSync(outDir, { recursive: true })
+const temporaryOutput = `${output}.tmp`
 
 console.log(`[capture-session] Opening visible browser for: ${url}`)
 console.log(`[capture-session] Saving authenticated state to: ${output}`)
@@ -30,15 +31,45 @@ const page = await context.newPage()
 
 try {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
-  console.log('[capture-session] Sign in and complete any required app flow in the visible browser.')
-  console.log('[capture-session] Press Enter in this terminal when the app is ready and the session is valid.')
+  console.log('[capture-session] Browser is ready. Complete sign-in and any required app flow in this window.')
+  console.log('[capture-session] The browser stays open while you sign in.')
 
   const rl = readline.createInterface({ input, output: outputStream })
-  await rl.question('Ready to save storage state? ')
+  let confirmed = false
+  while (!confirmed) {
+    const answer = await rl.question('[capture-session] Type READY here only after the app is fully loaded: ')
+    if (answer.trim().toUpperCase() === 'READY') {
+      confirmed = true
+    } else {
+      console.log('[capture-session] Still waiting. The browser remains open. Type READY after sign-in is complete.')
+    }
+  }
   rl.close()
 
-  await context.storageState({ path: output })
+  await waitForSessionReady(page)
+  await context.storageState({ path: temporaryOutput })
+  fs.renameSync(temporaryOutput, output)
   console.log(`[capture-session] Saved authenticated state to: ${output}`)
 } finally {
+  if (fs.existsSync(temporaryOutput)) fs.rmSync(temporaryOutput)
   await browser.close()
+}
+
+async function waitForSessionReady(page) {
+  const selectors = [
+    'button.assistant-anchor[aria-haspopup="true"]',
+    'button.assistant-anchor',
+    'textarea[aria-label*="message" i]',
+    'textarea[placeholder*="message" i]',
+    'input[aria-label*="message" i]',
+    '[contenteditable="true"]',
+  ]
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    for (const selector of selectors) {
+      if (await page.locator(selector).first().isVisible().catch(() => false)) return
+    }
+    await page.waitForTimeout(500)
+  }
+  throw new Error('Session was not verified: the app did not expose its Ask AI or chat UI after sign-in.')
 }
