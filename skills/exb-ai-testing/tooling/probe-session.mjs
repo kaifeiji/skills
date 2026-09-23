@@ -8,7 +8,7 @@ import { loadPlaywright } from './load-playwright.mjs'
 const args = process.argv.slice(2)
 const appUrl = args[0]
 const cacheIndex = args.indexOf('--cache-dir')
-const cacheDir = path.resolve(cacheIndex === -1 ? path.join('config', '.cache', 'browser-profile') : args[cacheIndex + 1])
+const cacheDir = path.resolve(cacheIndex === -1 ? path.join('.cache', 'browser-profile') : args[cacheIndex + 1])
 const signInTimeout = 120_000
 const pollInterval = 3_000
 

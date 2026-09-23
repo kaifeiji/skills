@@ -22,6 +22,7 @@ Use the following app-specific context:
 - page-specific widget entity trees, including connected data sources and map references
 - user goals the app is meant to support
 - optional focus area or test direction supplied by the user during HITL setup
+- approved `suite.turnsPerCase` value from the HITL setup
 
 ## Rules
 
@@ -33,10 +34,10 @@ Use the following app-specific context:
 - Before creating a case, verify that the page can be opened and has visible page content in the dedicated Playwright session.
 - Select the target with `pageId` and write its canonical `pageUrl` directly into the case. Build it from the config root URL plus `/page/` and the matched page title transformed with spaces to `-`, periods to `_`, then URL-encoded.
 - Omit pages that are inaccessible, permission-restricted, empty, or do not support a meaningful AI task.
-- The ordered suite is one continuous Assistant conversation. Each case contributes the approved number of turns on its target page, and later cases may inherit earlier context; use `5` only as the default when no other turn count was approved.
+- The ordered suite is one continuous Assistant conversation. Each auto-generated case contributes exactly `suite.turnsPerCase` turns on its target page, and later cases may inherit earlier context. Use `5` only when `suite.turnsPerCase` is absent and the default was not changed.
 - Use the visible page title for the case `title` by default, or a concise business goal when it better identifies the conversation.
 - Derive case `id` from `title` as lowercase ASCII kebab-case. Keep internal page/widget/view IDs in their dedicated fields.
-- Use the same requested turn count for every case unless the user explicitly asks for different coverage.
+- Use exactly the approved `suite.turnsPerCase` count for every auto-generated case. Do not use the five-turn example below as a fixed requirement. If custom questions are supplied, use their exact count and order instead.
 - Mix direct asks, vague goals, corrections, and state-based follow-ups.
 - Prefer tasks tied to real app data and visible app actions, including map, search, layer, nearby, navigation, presentation, sharing, and printing workflows when evidenced.
 - At least 80% of generated turns must target data, fields, actions, or workflows positively evidenced in the supplied context.
@@ -66,7 +67,7 @@ Use the following app-specific context:
       "pageTitle": "visible page title",
       "pageUrl": "canonical published page URL",
       "intent": "one sentence",
-      "turns": ["turn 1", "turn 2", "turn 3", "turn 4", "turn 5"],
+      "turns": ["Turn 1 through Turn N, where N equals suite.turnsPerCase"],
       "expectedBehavior": "concise expected direction",
       "watchFor": ["likely failure 1", "likely failure 2"],
       "verification": {

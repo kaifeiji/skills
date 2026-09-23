@@ -51,7 +51,7 @@ Use field-definition or schema-explanation questions only as supporting turns or
 
 ## Conversation Shape
 
-The ordered suite is one realistic conversation that continues across page-targeted cases. Each case normally contributes the approved turn count (`5` unless changed by the user). At least 80% of turns must exercise evidenced app data, fields, actions, or workflows. Across the whole suite, use at most one unsupported or missing-data turn unless the user explicitly requests boundary-focused coverage. Mix direct asks, underspecified goals, visual references such as "this table" or "here", follow-ups, corrections, and source/state changes; make the first turn after a page transition understandable with the inherited conversation context.
+The ordered suite is one realistic conversation that continues across page-targeted cases. Each auto-generated case contributes exactly `suite.turnsPerCase` turns; use `5` only when that approved value is not changed by the user. At least 80% of turns must exercise evidenced app data, fields, actions, or workflows. Across the whole suite, use at most one unsupported or missing-data turn unless the user explicitly requests boundary-focused coverage. Mix direct asks, underspecified goals, visual references such as "this table" or "here", follow-ups, corrections, and source/state changes; make the first turn after a page transition understandable with the inherited conversation context.
 
 Generated turns speak as a user performing the real task now. Express fallback expectations as part of that direct request.
 

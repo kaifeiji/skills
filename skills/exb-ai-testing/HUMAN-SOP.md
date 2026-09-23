@@ -22,7 +22,7 @@ Confirm the following in plain language:
 
 Optional: the user may provide a test focus or concern area. Apply that lens during prompt generation and analysis; otherwise use the default prompt-generation rules and coverage template.
 
-Use the host's interactive question UI to ask for language, question source, viewport, and turns per auto-generated case together before running the session probe. Label the question-source choices `Auto-generate test questions` / `I will provide test questions`, or `自动生成测试问题` / `我提供测试问题` in Chinese. Keep the workflow pending until the user submits the choices. When no interactive UI is available, ask the same choices in chat and wait for the reply. If user-provided questions are selected, collect them in a follow-up question and use their exact count and order instead of generating or padding turns.
+Use the host's interactive question UI to ask for language, question source, viewport, and turns per auto-generated case together before running the session probe. Label the question-source choices `Auto-generate test questions` / `I will provide test questions`, or `自动生成测试问题` / `我提供测试问题` in Chinese. Keep the workflow pending until the user submits the choices. When no interactive UI is available, ask the same choices in chat and wait for the reply. If user-provided questions are selected, set `suite.questionSource` to `custom`, collect them in a follow-up question, and use their exact count and order instead of generating or padding turns. Otherwise, set `suite.questionSource` to `auto` and write the selected count to `suite.turnsPerCase`.
 
 ## User-facing progress
 
@@ -137,7 +137,7 @@ Add `--case <case-id>` for a focused run.
 
 The runner performs one full load for the first case, then reuses the same browser page. Later cases call ExB's URL manager to switch pages through browser history without reloading. The Assistant thread is intentionally preserved across cases, so the suite order is one continuous conversation. It opens Ask AI with the stable `assistant-anchor` class before language-dependent fallbacks. After runtime completion, selected AI renderers must mount, clear their loading indicators, and remain stable for one second before evidence is captured. Startup failures and renderer timeouts are recorded under that case and the runner continues with the next case.
 
-The runner reuses the shared browser cache at `config/.cache/browser-profile` by default, but validates the current session through `window._sessionManager` rather than trusting the profile directory. Run `probe-session.mjs` again whenever the runner reports `signed-out` or `expired`. Use `--cache-dir <dir>` to select another profile.
+The runner reuses the shared browser cache at `.cache/browser-profile` in the repository root by default, but validates the current session through `window._sessionManager` rather than trusting the profile directory. Run `probe-session.mjs` again whenever the runner reports `signed-out` or `expired`. Use `--cache-dir <dir>` to select another profile.
 
 This should create artifacts under:
 

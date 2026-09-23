@@ -19,7 +19,7 @@ const language = languageIndex === -1
   ? process.env.TEST_LANGUAGE || 'en'
   : args[languageIndex + 1]
 const cacheIndex = args.indexOf('--cache-dir')
-const cacheDir = path.resolve(cacheIndex === -1 ? path.join('config', '.cache', 'browser-profile') : args[cacheIndex + 1])
+const cacheDir = path.resolve(cacheIndex === -1 ? path.join('.cache', 'browser-profile') : args[cacheIndex + 1])
 const viewportIndex = args.indexOf('--viewport')
 const viewportName = viewportIndex === -1 ? 'desktop' : args[viewportIndex + 1]
 const viewport = getViewport(viewportName)

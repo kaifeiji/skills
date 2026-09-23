@@ -34,11 +34,19 @@ if (!['headed', 'headless'].includes(mode)) {
 
 const runRoot = path.resolve(getArg('--output', process.env.TEST_OUTPUT || defaultRunDir()))
 const selectedCase = getArg('--case', process.env.TEST_CASE)
-const cacheDir = path.resolve(getArg('--cache-dir', process.env.TEST_CACHE_DIR || path.join('config', '.cache', 'browser-profile')))
+const cacheDir = path.resolve(getArg('--cache-dir', process.env.TEST_CACHE_DIR || path.join('.cache', 'browser-profile')))
 const cases = (config.suite?.cases || []).filter((testCase) => !selectedCase || testCase.id === selectedCase)
 if (!cases.length) {
   console.error(`[run-cases] No reviewed cases found${selectedCase ? ` for: ${selectedCase}` : ''}. Agent handoff is incomplete.`)
   process.exit(1)
+}
+const turnsPerCase = config.suite?.turnsPerCase
+if (config.suite?.questionSource !== 'custom' && Number.isInteger(turnsPerCase) && turnsPerCase > 0) {
+  const casesWithWrongTurnCount = cases.filter((testCase) => (testCase.turns || []).length !== turnsPerCase)
+  if (casesWithWrongTurnCount.length) {
+    console.error(`[run-cases] Auto-generated cases must contain exactly suite.turnsPerCase (${turnsPerCase}) turns. Invalid: ${casesWithWrongTurnCount.map((testCase) => `${testCase.id}=${testCase.turns?.length || 0}`).join(', ')}`)
+    process.exit(1)
+  }
 }
 const casesWithInvalidNames = cases.filter((testCase) => (
   typeof testCase.title !== 'string' || !testCase.title.trim() ||
