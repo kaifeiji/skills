@@ -9,6 +9,7 @@ const args = process.argv.slice(2)
 const appUrl = args[0]
 const cacheIndex = args.indexOf('--cache-dir')
 const cacheDir = path.resolve(cacheIndex === -1 ? path.join('.cache', 'browser-profile') : args[cacheIndex + 1])
+const existingSessionTimeout = 30_000
 const signInTimeout = 120_000
 const pollInterval = 3_000
 
@@ -24,7 +25,7 @@ fs.mkdirSync(cacheDir, { recursive: true })
 
 if (hasBrowserProfile) {
   console.log('[probe-session] Checking the app session.')
-  const cachedState = await inspectWithBrowser(true)
+  const cachedState = await inspectWithBrowser(true, existingSessionTimeout)
   if (cachedState === 'signed-in') {
     console.log(`[probe-session] Existing session is valid: ${cacheDir}`)
     process.exit(0)
@@ -33,12 +34,13 @@ if (hasBrowserProfile) {
 
 await waitForSignIn()
 
-async function inspectWithBrowser(headless) {
+async function inspectWithBrowser(headless, timeout = 60_000) {
+  const deadline = Date.now() + timeout
   const context = await chromium.launchPersistentContext(cacheDir, { headless, ignoreHTTPSErrors: true })
   try {
     const page = await getSinglePage(context)
-    await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    return await readSessionState(page)
+    await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: remainingTimeout(deadline) })
+    return await readSessionState(page, remainingTimeout(deadline))
   } finally {
     await context.close()
   }
@@ -85,13 +87,18 @@ async function getSinglePage(context) {
 }
 
 async function readSessionState(page, timeout = 60_000) {
-  await page.waitForFunction(() => Boolean(window._sessionManager), null, { timeout: Math.max(1, timeout) })
+  const deadline = Date.now() + timeout
+  await page.waitForFunction(() => Boolean(window._sessionManager), null, { timeout: remainingTimeout(deadline) })
   await page.waitForFunction(
     () => Boolean(window._sessionManager?.getMainSession?.()),
     null,
-    { timeout: Math.max(1, timeout) },
+    { timeout: remainingTimeout(deadline) },
   ).catch(() => {})
   return readSessionStateIfReady(page)
+}
+
+function remainingTimeout(deadline) {
+  return Math.max(1, deadline - Date.now())
 }
 
 async function readSessionStateIfReady(page) {

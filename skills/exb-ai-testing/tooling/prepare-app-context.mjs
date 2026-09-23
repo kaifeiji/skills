@@ -22,6 +22,10 @@ const cacheIndex = args.indexOf('--cache-dir')
 const cacheDir = path.resolve(cacheIndex === -1 ? path.join('.cache', 'browser-profile') : args[cacheIndex + 1])
 const viewportIndex = args.indexOf('--viewport')
 const viewportName = viewportIndex === -1 ? 'desktop' : args[viewportIndex + 1]
+const headlessIndex = args.indexOf('--headless')
+const headless = headlessIndex === -1 ? true : args[headlessIndex + 1] !== 'false'
+const appContextTimeoutIndex = args.indexOf('--app-context-timeout')
+const appContextTimeout = appContextTimeoutIndex === -1 ? 90_000 : Number(args[appContextTimeoutIndex + 1])
 const viewport = getViewport(viewportName)
 
 if (!appUrl) {
@@ -37,7 +41,7 @@ if (!['en', 'zh'].includes(language)) {
 
 fs.mkdirSync(cacheDir, { recursive: true })
 const context = await chromium.launchPersistentContext(cacheDir, {
-  headless: true,
+  headless: headless,
   ignoreHTTPSErrors: true,
   viewport,
 })
@@ -435,8 +439,17 @@ async function waitForAppContext(page) {
     await page.waitForFunction(() => {
       const appManager = typeof window._am === 'function' ? window._am() : window._am
       return Object.keys(appManager?.appConfig?.widgets || {}).length > 0
-    }, { timeout: 30_000 })
+    }, { timeout: appContextTimeout })
   } catch {
-    console.log('[prepare-app-context] Experience Builder runtime was not ready after the bounded wait; collecting available context.')
+    try {
+      const tmpDir = '.tmp'
+      fs.mkdirSync(tmpDir, { recursive: true })
+      const snapshotPath = path.join(tmpDir, `prepare-app-context-${Date.now()}.html`)
+      const content = await page.content()
+      fs.writeFileSync(snapshotPath, content, 'utf8')
+      console.log(`[prepare-app-context] Experience Builder runtime was not ready after ${appContextTimeout}ms; saved page snapshot to: ${snapshotPath}`)
+    } catch (err) {
+      console.log('[prepare-app-context] Failed to save page snapshot after timeout.', err?.message || err)
+    }
   }
 }
