@@ -70,6 +70,7 @@ Before returning cases, confirm that each one:
 - resolves every field-level request to a loaded field name or alias in the matched root data source or layer schema
 - has a natural user goal rather than an implementation-level command
 - directly performs the user task
+- preserves every query parameter and hash from the config URL in `pageUrl`; parameters such as `draft=true` are part of the tested app state
 - can reveal a wrong interpretation, source, action, state transition, presentation, or recovery behavior
 - has `expectedBehavior` describing direction rather than exact response wording
 - has `watchFor` items that identify plausible observable failure symptoms

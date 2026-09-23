@@ -32,7 +32,7 @@ Use the following app-specific context:
 - If custom questions are supplied, create exactly one case for the selected visible page and use the questions in their supplied order as its turns. Do not add generated turns or cases for other pages.
 - If custom questions are not supplied, generate one case for each relevant accessible page in `appContext.pages`. Do not generate separate cases for views, tabs, or URL query variants within a page.
 - Before creating a case, verify that the page can be opened and has visible page content in the dedicated Playwright session.
-- Select the target with `pageId` and write its canonical `pageUrl` directly into the case. Build it from the config root URL plus `/page/` and the matched page title transformed with spaces to `-`, periods to `_`, then URL-encoded.
+- Select the target with `pageId` and write its canonical `pageUrl` directly into the case. Derive it from the full config URL with the standard URL API: preserve the original origin, every query parameter in `search` (for example `?draft=true`), and the original hash; only update the pathname to the matched `/page/<encoded-title>` path. Never reconstruct the URL from origin alone or discard `search`/`hash`.
 - Omit pages that are inaccessible, permission-restricted, empty, or do not support a meaningful AI task.
 - The ordered suite is one continuous Assistant conversation. Each auto-generated case contributes exactly `suite.turnsPerCase` turns on its target page, and later cases may inherit earlier context. Use `5` only when `suite.turnsPerCase` is absent and the default was not changed.
 - Use the visible page title for the case `title` by default, or a concise business goal when it better identifies the conversation.
