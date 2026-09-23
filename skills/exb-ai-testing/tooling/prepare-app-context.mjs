@@ -95,6 +95,35 @@ const config = {
   }
 }
 
+// Build default cases from discovered pages: include pageUrl preserving origin/search/hash
+try {
+  const base = new URL(appUrl)
+  // keep the prefix up to and including the experience id if present
+  const parts = base.pathname.split('/').filter(Boolean)
+  const expIndex = parts.indexOf('experience')
+  let prefixPath = base.pathname
+  if (expIndex !== -1 && parts.length > expIndex + 1) {
+    prefixPath = '/' + parts.slice(0, expIndex + 2).join('/')
+  }
+  const cases = (appContext?.pages || []).map((pageItem) => {
+    const title = pageItem.title || pageItem.id || 'Home'
+    const encoded = encodeURIComponent(title).replace(/%20/g, '-')
+    const u = new URL(base)
+    u.pathname = `${prefixPath}/page/${encoded}`
+    const pageUrl = u.toString()
+    return {
+      id: `case-${encoded}`,
+      title,
+      pageId: pageItem.id || null,
+      pageUrl,
+      tags: [],
+    }
+  })
+  if (cases.length) config.suite.cases = cases
+} catch (err) {
+  console.log('[prepare-app-context] Failed to generate default cases:', err?.message || err)
+}
+
 fs.writeFileSync(output, JSON.stringify(omitEmptyValues(config), null, 2) + '\n')
 console.log(`[prepare-app-context] Wrote config to: ${output}`)
 console.log(`[prepare-app-context] App title: ${appTitle}`)
