@@ -49,8 +49,9 @@ try {
   await page.waitForLoadState('networkidle')
   await requireValidSession(page)
   await waitForAppContext(page)
+  const loadedDataSources = await loadConfiguredDataSources(page)
   appTitle = await page.title()
-  appContext = await readAppContext(page, appUrl)
+  appContext = await readAppContext(page, appUrl, loadedDataSources)
 } finally {
   await context.close()
 }
@@ -96,6 +97,65 @@ async function requireValidSession(page) {
   }
 }
 
+async function loadConfiguredDataSources(page) {
+  await page.waitForFunction(() => Boolean(window._dataSourceManager), null, { timeout: 60_000 })
+  return page.evaluate(async () => {
+    const manager = window._dataSourceManager
+    const appManager = typeof window._am === 'function' ? window._am() : window._am
+    const configured = appManager?.appConfig?.dataSources || {}
+    let loadError = null
+    let timer
+    try {
+      await Promise.race([
+        manager.createAllDataSources(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Data source creation exceeded 90 seconds.')), 90_000)
+        }),
+      ])
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : String(error)
+    } finally {
+      clearTimeout(timer)
+    }
+
+    const summarizeFields = (dataSource) => Object.values(dataSource?.getSchema?.()?.fields || {})
+      .map((field) => ({
+        name: field?.name || field?.jimuName || null,
+        alias: field?.alias || null,
+        type: field?.type || null,
+        esriType: field?.esriType || null,
+      }))
+      .filter((field) => field.name)
+      .sort((left, right) => left.name.localeCompare(right.name))
+    const summarizeInstance = (dataSource) => ({
+      id: dataSource?.id || null,
+      label: dataSource?.getLabel?.() || dataSource?.getDataSourceJson?.()?.sourceLabel || dataSource?.id || null,
+      type: dataSource?.type || dataSource?.getDataSourceJson?.()?.type || null,
+      fields: summarizeFields(dataSource),
+    })
+
+    return Object.entries(configured).map(([rootId, definition]) => {
+      const root = manager.getDataSource(rootId)
+      const layers = root?.isDataSourceSet?.() ? (root.getAllChildDataSources?.() || []) : []
+      return {
+        id: rootId,
+        label: root?.getLabel?.() || definition?.label || definition?.sourceLabel || rootId,
+        type: root?.type || definition?.type || null,
+        itemId: definition?.itemId || null,
+        portalUrl: definition?.portalUrl || null,
+        loadStatus: root ? 'loaded' : 'unavailable',
+        fields: summarizeFields(root),
+        layers: layers
+          .filter((layer) => !layer?.dataViewId && !layer?.localId)
+          .map(summarizeInstance)
+          .filter((layer) => layer.id)
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        ...(loadError ? { loadWarning: loadError } : {}),
+      }
+    })
+  })
+}
+
 function slugify(title) {
   const slug = title
     .normalize('NFKD')
@@ -126,7 +186,9 @@ function resolveConfigTarget(baseSlug, outputArg) {
   const extension = path.extname(requestedOutput) || '.json'
   const outputStem = path.basename(requestedOutput, extension)
   const appSlug = nextAvailableSlug(baseSlug, outputDir)
-  const output = nextAvailableFile(outputDir, outputStem, extension)
+  const output = outputArg
+    ? nextAvailableFile(outputDir, outputStem, extension)
+    : path.join(outputDir, `${appSlug}${extension}`)
   return { appSlug, output }
 }
 
@@ -150,7 +212,7 @@ function nextAvailableFile(directory, stem, extension) {
 }
 
 function withSequence(value, sequence) {
-  return sequence === 1 ? value : `${value}-${String(sequence).padStart(2, '0')}`
+  return `${value}-${String(sequence).padStart(2, '0')}`
 }
 
 function configSlugExists(configDir, slug) {
@@ -167,8 +229,8 @@ function configSlugExists(configDir, slug) {
     })
 }
 
-async function readAppContext(page, appUrl) {
-  return page.evaluate((appUrl) => {
+async function readAppContext(page, appUrl, loadedDataSources) {
+  return page.evaluate(({ appUrl, loadedDataSources }) => {
     const summarizeDataSources = (sources) => Object.values(sources || {})
       .map((source) => {
         const definition = source?.dataSourceJson || source?.originDataSourceJson || source || {}
@@ -338,7 +400,13 @@ async function readAppContext(page, appUrl) {
       }
     }
     collectReferencedDataSources({ pages: pageCandidates, dialogs })
+    const loadedDataSourcesById = new Map((loadedDataSources || []).map((source) => [source.id, source]))
     const summarizedDataSourcesById = new Map(summarizeDataSources(dataSources).map((source) => [source.id, source]))
+    const referencedRootDataSourceIds = new Set()
+    referencedDataSourceIds.forEach((id) => {
+      const loadedRoot = (loadedDataSources || []).find((source) => source.id === id || source.layers?.some((layer) => layer.id === id))
+      referencedRootDataSourceIds.add(loadedRoot?.id || id)
+    })
     const strings = [...new Set((document.body?.innerText || '')
       .split(/\r?\n/)
       .map((text) => text.replace(/\s+/g, ' ').trim())
@@ -353,13 +421,13 @@ async function readAppContext(page, appUrl) {
       footer: summarizeSurface(getLayoutId(appConfig.footer)),
       dialogs,
       pages: pageCandidates,
-      dataSources: [...referencedDataSourceIds]
-        .map((id) => summarizedDataSourcesById.get(id))
+      dataSources: [...referencedRootDataSourceIds]
+        .map((id) => loadedDataSourcesById.get(id) || summarizedDataSourcesById.get(id))
         .filter(Boolean)
         .sort((left, right) => left.id.localeCompare(right.id)),
       strings,
     }
-  })
+  }, { appUrl, loadedDataSources })
 }
 
 async function waitForAppContext(page) {

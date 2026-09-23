@@ -29,9 +29,9 @@ Prefix every status value with its icon: `✅ Success` / `✅ 成功`, `⚠️ P
 
 ## Evidence Order
 
-Start with `case-debug.md`. If it contains a prompt, usable Agent Response, relevant plan/action evidence, and no visible contradiction, it is sufficient for a concise finding; do not open `case-debug.json` or screenshots just for routine confirmation.
+Start with `case-debug.md`. If it contains a prompt, usable Agent Response, relevant plan/action evidence, and no visible contradiction, it is sufficient for a concise text-only finding.
 
-Open the turn screenshot only when `case-debug.md` is missing or ambiguous, the response is marked missing, a user-visible state matters, or the debug text conflicts with the expected behavior. Use `case-debug.json` only when Markdown cannot explain the cause and raw business-state evidence is needed.
+Open the turn screenshot whenever `case-debug.md` reports a renderer UI, the prompt requests a table/chart/list/map or another visual presentation, visible app state matters, the response is marked missing, Markdown is ambiguous, or debug text conflicts with expected behavior. Renderer output is user-visible evidence and cannot be judged from Agent Response text alone. Use `case-debug.json` only when Markdown cannot explain the cause and raw business-state evidence is needed.
 
 The final `analysis.md` must still include the clickable turn screenshot for every turn, even when the agent did not open or inspect that image during analysis. The image link is report evidence for the reader, not a requirement to feed every screenshot into the agent's analysis context.
 
@@ -63,6 +63,17 @@ Do not narrate the debug transcript. Use at most one short debug excerpt per fin
 - a 403, timeout, 429, or missing-field limitation.
 
 Do not quote or summarize routine lifecycle lines such as `Status: completed`, `Completed.`, `Thinking`, `Working`, `Renderer emitted`, generic query-step labels, or repeated prompt/system metadata. These are not findings. If the screenshot already proves the issue, omit debug evidence entirely.
+
+## Causal Confidence
+
+Separate what the user can see from why it happened:
+
+- **Observed:** directly visible in the screenshot or final user-facing response.
+- **Supported cause:** an internal state, selected source/field, or concrete error that agrees with the observed result.
+- **Hypothesis:** a plausible explanation without confirming evidence; label it as uncertain.
+- **Unknown:** the artifacts do not establish a cause; state the evidence gap instead of assigning blame.
+
+Use `verification.visibleChecks` and `verification.failureSignals` as a lightweight review contract when present. They guide classification but are not automated assertions. A runner completion signal never substitutes for a visible check. Add `Key Debug` only for a supported cause or a concrete error; do not turn a hypothesis into a definitive product finding.
 
 ## Report Structure
 

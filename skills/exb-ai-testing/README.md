@@ -4,17 +4,25 @@ This is the distributable skill bundle for EXB AI Chat testing.
 
 ## Install
 
-Install into the current project:
+Install the published skill from GitHub into the current project:
 
 ```bash
-npx skills add https://github.com/kaifeiji --skill exb-ai-testing
+npx skills add https://github.com/kaifeiji/skills.git --skill exb-ai-testing
 ```
 
-Install globally:
+Install the published skill globally:
 
 ```bash
-npx skills add https://github.com/kaifeiji --skill exb-ai-testing --global
+npx skills add https://github.com/kaifeiji/skills.git --skill exb-ai-testing --global
 ```
+
+For local skill development, run this from the repository root after editing the skill:
+
+```bash
+npx skills add . --skill exb-ai-testing --global --yes
+```
+
+The local command refreshes the installed skill; it does not install the target app's dependencies. The first test run performs the Node.js, `@playwright/test`, and Chromium checks described below.
 
 ## Included assets
 
@@ -26,13 +34,13 @@ npx skills add https://github.com/kaifeiji --skill exb-ai-testing --global
 
 ## Usage
 
-Use the skill with the App URL. Before execution it asks the user to choose English or Chinese and a viewport. It shows the browser window by default and saves results under `artifacts`. A test focus and alternate save location are optional. Browser execution mode remains internal.
+Use the skill with the App URL. Before execution it asks the user to choose English or Chinese, a viewport, and the number of turns per auto-generated case (`5` recommended). If the user supplies custom questions, their exact count and order are used instead. It shows the browser window by default and saves results under `artifacts`. A test focus and alternate save location are optional. Browser execution mode remains internal.
 
 The first step is to check Node.js, `@playwright/test`, and Playwright Chromium. Do not open the app in the VS Code browser. If `@playwright/test` or Chromium is missing, ask the user before installing it. The app must be opened by the bundled Node Playwright scripts.
 
 Each case artifact includes a readable `case-debug.md` summary and a `case-debug.json` AssistantRuntime business-state snapshot for deeper investigation. The JSON intentionally omits compiled graphs, dependencies, functions, promises, and portal objects.
 
-App context collection uses configured `appConfig` data sources and visible page/widget references; it does not read runtime data source manager objects.
+App context collection creates configured data sources through ExB's runtime manager, waits for child layers, and stores plain layer and field metadata for referenced roots. Runtime objects are not serialized.
 
 ## Workflow
 

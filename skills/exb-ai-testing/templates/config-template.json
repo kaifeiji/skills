@@ -70,7 +70,24 @@
         "label": "<data-source-label>",
         "type": "<data-source-type>",
         "itemId": "<portal-item-id>",
-        "portalUrl": "https://www.arcgis.com"
+        "portalUrl": "https://www.arcgis.com",
+        "loadStatus": "loaded",
+        "fields": [],
+        "layers": [
+          {
+            "id": "<layer-data-source-id>",
+            "label": "<layer-label>",
+            "type": "<layer-data-source-type>",
+            "fields": [
+              {
+                "name": "<field-name>",
+                "alias": "<field-alias>",
+                "type": "<field-type>",
+                "esriType": "<esri-field-type>"
+              }
+            ]
+          }
+        ]
       }
     ],
     "strings": []
@@ -93,6 +110,10 @@
         ],
         "expectedBehavior": "What should be true about the app and assistant behavior?",
         "watchFor": ["Likely failure mode 1", "Likely failure mode 2"],
+        "verification": {
+          "visibleChecks": ["The requested result is visibly present"],
+          "failureSignals": ["The response claims success but the result is absent"]
+        },
         "tags": ["example", "page", "state"]
       }
     ]

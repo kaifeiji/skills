@@ -16,12 +16,13 @@ Confirm the following in plain language:
 - Output language: explicitly choose English (`en`) or Chinese (`zh`)
 - Whether to show the browser window (default: visible)
 - Viewport choice: `desktop` (`1920x1080`), `pad` (`1024x1366`), or `mobile` (`390x844`)
+- Turns per auto-generated case: a positive number, recommended default `5`
 - Result output location (default: `artifacts`)
 - Test focus (optional)
 
 Optional: the user may provide a test focus or concern area. Apply that lens during prompt generation and analysis; otherwise use the default prompt-generation rules and coverage template.
 
-Use the host's interactive question UI to ask for language, question source, and viewport together before running the session probe. Label the question-source choices `Auto-generate test questions` / `I will provide test questions`, or `自动生成测试问题` / `我提供测试问题` in Chinese. Keep the workflow pending until the user submits the choices. When no interactive UI is available, ask the same choices in chat and wait for the reply.
+Use the host's interactive question UI to ask for language, question source, viewport, and turns per auto-generated case together before running the session probe. Label the question-source choices `Auto-generate test questions` / `I will provide test questions`, or `自动生成测试问题` / `我提供测试问题` in Chinese. Keep the workflow pending until the user submits the choices. When no interactive UI is available, ask the same choices in chat and wait for the reply. If user-provided questions are selected, collect them in a follow-up question and use their exact count and order instead of generating or padding turns.
 
 ## User-facing progress
 
@@ -38,7 +39,7 @@ Read the app title from the loaded page and convert it to a lowercase kebab-case
 
 Use lowercase letters and hyphens in the slug; omit spaces, underscores, and other punctuation.
 
-The slug is generated from the page title and matches the default config filename and run folder name. When the default config name already exists, append `-02`, `-03`, and so on; the resolved slug is stored in config and used in the run folder.
+The slug is generated from the page title and the default config filename always uses a sequence suffix: `<app-slug>-01.json`, then `<app-slug>-02.json`, and so on. The resolved slug is stored in config. The default artifact folder uses the date, config filename stem, and its own run sequence: config `<app-slug>-03.json` produces `<YYYYMMDD>-<app-slug>-03-01`, then `<YYYYMMDD>-<app-slug>-03-02` if needed.
 
 ## Environment preparation
 
@@ -96,7 +97,7 @@ The remaining values—slug, run name, auth handling, config generation, report 
 
 ## Step 2: Agent collects context and prepares config from the shared session
 
-Open the app in Chromium, read `document.title`, generate a unique slug, then create `config/<app-slug>.json`. The script collects context only; the Agent authors and reviews the prompt suite afterward.
+Open the app in Chromium, read `document.title`, generate a unique slug, then create `config/<app-slug>-01.json` or the next available numbered config. The script collects context only; the Agent authors and reviews the prompt suite afterward.
 
 The bundled preparation command accepts the app URL and derives the slug automatically:
 
@@ -105,13 +106,14 @@ node "<skill-root>/tooling/prepare-app-context.mjs" \
 	https://<app-url>
 ```
 
-Use the resolved slug consistently in the config filename and final run folder name. If `config/<base-slug>.json` exists, the helper writes `config/<base-slug>-02.json` instead of replacing it.
+Use the resolved slug consistently in the config filename and final artifact folder name. The helper writes `config/<base-slug>-01.json`, then `config/<base-slug>-02.json`, and so on without replacing an existing config.
 
 The file should contain:
 
 - app URL
 - startup settings
 - app-specific context notes
+- referenced configured data sources with loaded layers and field schemas
 - an empty `suite.cases` array for reviewed multi-turn prompt cases
 
 Keep the configuration focused on the app target and test suite. Authentication remains in the shared browser profile, not in config.
@@ -127,7 +129,7 @@ Use the bundled runner as the main evaluation path. It launches Chromium directl
 
 ```bash
 node "<skill-root>/tooling/run-cases.mjs" \
-	--config config/<app-slug>.json \
+	--config config/<app-slug>-NN.json \
 	--mode headed
 ```
 
@@ -140,13 +142,13 @@ The runner reuses the shared browser cache at `config/.cache/browser-profile` by
 This should create artifacts under:
 
 ```text
-artifacts/<YYYYMMDD-app-slug>-<sequence>/
+artifacts/<YYYYMMDD>-<app-slug>-<config-sequence>-<run-sequence>/
 ```
 
 Example:
 
 ```text
-artifacts/20260922-explore-san-diego-01/
+artifacts/20260923-<app-slug>-03-01/
 ```
 
 Validate that screenshots, result files, and debug evidence are present.

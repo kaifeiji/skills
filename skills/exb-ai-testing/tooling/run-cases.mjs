@@ -32,7 +32,7 @@ if (!['headed', 'headless'].includes(mode)) {
   process.exit(1)
 }
 
-const runRoot = path.resolve(getArg('--output', process.env.TEST_OUTPUT || defaultRunDir(config.slug)))
+const runRoot = path.resolve(getArg('--output', process.env.TEST_OUTPUT || defaultRunDir()))
 const selectedCase = getArg('--case', process.env.TEST_CASE)
 const cacheDir = path.resolve(getArg('--cache-dir', process.env.TEST_CACHE_DIR || path.join('config', '.cache', 'browser-profile')))
 const cases = (config.suite?.cases || []).filter((testCase) => !selectedCase || testCase.id === selectedCase)
@@ -87,11 +87,12 @@ const selectors = {
 const readyTimeout = Number(config.timeouts?.ready || process.env.TEST_READY_TIMEOUT || 30000)
 const turnTimeout = Number(config.timeouts?.turn || process.env.TEST_TURN_TIMEOUT || 120000)
 
-function defaultRunDir(slug = 'app') {
+function defaultRunDir() {
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
+  const configStem = path.basename(configPath, path.extname(configPath))
   let sequence = 1
   while (true) {
-    const runDir = path.join('artifacts', `${date}-${slug}-${String(sequence).padStart(2, '0')}`)
+    const runDir = path.join('artifacts', `${date}-${configStem}-${String(sequence).padStart(2, '0')}`)
     if (!fs.existsSync(runDir)) return runDir
     sequence += 1
   }
@@ -466,41 +467,27 @@ async function waitForTurn(page, before, deadline) {
   }
 }
 
-async function getRendererContainerCount(page) {
-  return page.evaluate(() => {
-    const visit = (root) => {
-      if (!root?.querySelectorAll) return 0
-      let count = root.querySelectorAll('.chat-message-extra').length
-      root.querySelectorAll('*').forEach((element) => {
-        if (element.shadowRoot) count += visit(element.shadowRoot)
-      })
-      return count
-    }
-    return visit(document)
-  }).catch(() => 0)
-}
-
-async function waitForRenderer(page, runtime, deadline, containerCountBefore) {
+async function waitForRenderer(page, runtime, deadline) {
   if (!runtime?.snapshot?.aiRenderer) return { status: 'not-requested' }
 
   let stableSignature = null
   let stableSince = null
   while (Date.now() < deadline) {
     const renderer = await page.evaluate(() => {
-      const visit = (root, matches = []) => {
+      const visit = (root, selector, matches = []) => {
         if (!root) return matches
         if (root.querySelectorAll) {
-          matches.push(...root.querySelectorAll('.chat-message-extra'))
+          matches.push(...root.querySelectorAll(selector))
           root.querySelectorAll('*').forEach((element) => {
-            if (element.shadowRoot) visit(element.shadowRoot, matches)
+            if (element.shadowRoot) visit(element.shadowRoot, selector, matches)
           })
         }
         return matches
       }
-      const containers = visit(document)
-      const container = containers.at(-1)
-      if (!container || containers.length <= containerCountBefore) {
-        return { attached: false, loading: false, signature: null, containerCount: containers.length }
+      const assistantMessage = visit(document, 'arcgis-assistant-message').at(-1)
+      const container = assistantMessage ? visit(assistantMessage, '.chat-message-extra')[0] : null
+      if (!container) {
+        return { attached: false, loading: false, signature: null }
       }
 
       const loadingSelector = '.jimu-loading, .jimu-primary-loading, .jimu-secondary-loading, .donut-loading, .bar-loading, .dot-loading, .skeleton-loading'
@@ -522,16 +509,15 @@ async function waitForRenderer(page, runtime, deadline, containerCountBefore) {
         attached: true,
         loading: state.loading,
         signature: `${state.html.length}:${Math.round(rect.width)}:${Math.round(rect.height)}:${container.textContent?.trim().length || 0}`,
-        containerCount: containers.length,
       }
-    }).catch(() => ({ attached: false, loading: false, signature: null, containerCount: 0 }))
+    }).catch(() => ({ attached: false, loading: false, signature: null }))
 
     if (renderer.attached && !renderer.loading) {
       if (renderer.signature !== stableSignature) {
         stableSignature = renderer.signature
         stableSince = Date.now()
       } else if (Date.now() - stableSince >= 1_000) {
-        return { status: 'ready', signature: renderer.signature, containerCount: renderer.containerCount }
+        return { status: 'ready', signature: renderer.signature }
       }
     } else {
       stableSignature = null
@@ -539,7 +525,7 @@ async function waitForRenderer(page, runtime, deadline, containerCountBefore) {
     }
     await page.waitForTimeout(250)
   }
-  return { status: 'timeout', containerCountBefore }
+  return { status: 'timeout' }
 }
 
 async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
@@ -617,6 +603,11 @@ function appendTurnDebug(lines, turn) {
 
   appendDebugSection(lines, 'User Prompt', [turn.prompt])
   appendDebugSection(lines, 'Execution Summary', formatExecutionSummary(runtime))
+  appendDebugSection(lines, 'Renderer UI', [
+    runtime.rendererWait?.status && runtime.rendererWait.status !== 'not-requested'
+      ? `Renderer UI status: ${runtime.rendererWait.status}.`
+      : null,
+  ])
 
   appendDebugSection(lines, 'Reasoning and Plan', [
     runtime.planReason,
@@ -709,7 +700,6 @@ async function runCase(page, testCase, index) {
     const turn = { index: turnIndex + 1, prompt, startedAt: turnStartedAt, status: 'failed' }
     turn.runtimeBefore = runtime
     try {
-      const rendererContainerCountBefore = await getRendererContainerCount(page)
       const input = await findVisibleLocator(page, selectors.chatInput, readyTimeout)
       if (!input) throw new Error('Chat input was not found using the built-in Playwright locators.')
       await input.fill(prompt)
@@ -718,7 +708,7 @@ async function runCase(page, testCase, index) {
       else await input.press('Enter')
       const turnDeadline = turnStartedMs + turnTimeout
       const after = await waitForTurn(page, runtime, turnDeadline)
-      after.rendererWait = await waitForRenderer(page, after, turnDeadline, rendererContainerCountBefore)
+      after.rendererWait = await waitForRenderer(page, after, turnDeadline)
       if (after.status !== 'timeout' && after.rendererWait.status === 'timeout') after.status = 'timeout'
       runtime = after
       turn.runtimeAfter = after

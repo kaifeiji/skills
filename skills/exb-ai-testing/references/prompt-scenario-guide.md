@@ -26,11 +26,16 @@ Use this path to understand where a prompt succeeds or breaks down:
 Start with a realistic user goal, then vary the conditions around it. Prefer prompts that sound like something a person would naturally ask over prompts that expose implementation names.
 
 - Use the app's real layer names, field vocabulary, configured widgets, and common user tasks.
-- Use field-level prompts only when the supplied context explicitly evidences that field or business attribute. Do not adapt a generic example by guessing that the target app has analogous fields.
+- Ground field-level prompts in fields and business attributes explicitly evidenced by the supplied context.
+- Phrase scenarios in the voice of a user performing the task now.
 - Mix explicit commands with implicit goals and underspecified requests.
 - Run short multi-turn conversations rather than treating every prompt as an isolated input.
 - Observe both the answer and the resulting app state.
 - Record where the failure occurred along the mental model instead of judging only the final text.
+
+## Balanced Prompt Mix
+
+When the app exposes business data, include some real data tasks such as lookup, filtering, counting, aggregation, grouping, comparison, ranking, trend, or spatial analysis. These should share the suite with prompts for intent ambiguity, data-source selection, current map or selection state, page and Widget navigation, app actions, renderer choice, follow-up memory, correction, and recovery. Field-definition prompts are supporting schema checks, not a substitute for this broader coverage.
 
 
 ## 01 Data Understanding and Insights
