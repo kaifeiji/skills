@@ -23,7 +23,7 @@ const cacheDir = path.resolve(cacheIndex === -1 ? path.join('.cache', 'browser-p
 const viewportIndex = args.indexOf('--viewport')
 const viewportName = viewportIndex === -1 ? 'desktop' : args[viewportIndex + 1]
 const headlessIndex = args.indexOf('--headless')
-const headless = headlessIndex === -1 ? true : args[headlessIndex + 1] !== 'false'
+const headless = headlessIndex === -1 ? false : args[headlessIndex + 1] !== 'false'
 const appContextTimeoutIndex = args.indexOf('--app-context-timeout')
 const appContextTimeout = appContextTimeoutIndex === -1 ? 90_000 : Number(args[appContextTimeoutIndex + 1])
 const viewport = getViewport(viewportName)
@@ -50,7 +50,24 @@ let appTitle
 let appContext
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-  await page.waitForLoadState('networkidle')
+  try {
+    await Promise.race([
+      page.waitForLoadState('networkidle'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('loadStateTimeout')), appContextTimeout)),
+    ])
+  } catch (err) {
+    console.log(`[prepare-app-context] page.waitForLoadState: ${err?.message || err}. Continuing to attempt context collection.`)
+    try {
+      const tmpDir = '.tmp'
+      fs.mkdirSync(tmpDir, { recursive: true })
+      const snapshotPath = path.join(tmpDir, `prepare-app-context-load-${Date.now()}.html`)
+      const content = await page.content()
+      fs.writeFileSync(snapshotPath, content, 'utf8')
+      console.log(`[prepare-app-context] Saved page snapshot to: ${snapshotPath}`)
+    } catch (saveErr) {
+      console.log('[prepare-app-context] Failed to save page snapshot after loadState timeout.', saveErr?.message || saveErr)
+    }
+  }
   await requireValidSession(page)
   await waitForAppContext(page)
   const loadedDataSources = await loadConfiguredDataSources(page)
