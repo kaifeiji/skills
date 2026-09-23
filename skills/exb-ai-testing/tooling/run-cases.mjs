@@ -3,10 +3,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { createRequire } from 'node:module'
+import { loadPlaywright } from './load-playwright.mjs'
+import { getViewport } from './viewport-utils.mjs'
 
-const require = createRequire(path.join(process.cwd(), 'package.json'))
-const { chromium } = require('@playwright/test')
+const { chromium } = loadPlaywright()
 
 const args = process.argv.slice(2)
 const getArg = (name, fallback) => {
@@ -17,7 +17,7 @@ const getArg = (name, fallback) => {
 const configPath = path.resolve(getArg('--config', process.env.TEST_CONFIG || ''))
 const config = configPath && fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : null
 if (!config) {
-  console.error('Usage: node tooling/run-cases.mjs --config <config.json> [--mode headed|headless] [--output <dir>] [--case <case-id>]')
+  console.error('Usage: node tooling/run-cases.mjs --config <config.json> [--mode headed|headless] [--output <dir>] [--case <case-id>] [--cache-dir <dir>]')
   process.exit(1)
 }
 const language = config.language || 'en'
@@ -34,9 +34,30 @@ if (!['headed', 'headless'].includes(mode)) {
 
 const runRoot = path.resolve(getArg('--output', process.env.TEST_OUTPUT || defaultRunDir(config.slug)))
 const selectedCase = getArg('--case', process.env.TEST_CASE)
+const cacheDir = path.resolve(getArg('--cache-dir', process.env.TEST_CACHE_DIR || path.join('config', '.cache', 'browser-profile')))
 const cases = (config.suite?.cases || []).filter((testCase) => !selectedCase || testCase.id === selectedCase)
 if (!cases.length) {
   console.error(`[run-cases] No reviewed cases found${selectedCase ? ` for: ${selectedCase}` : ''}. Agent handoff is incomplete.`)
+  process.exit(1)
+}
+const casesWithInvalidNames = cases.filter((testCase) => (
+  typeof testCase.title !== 'string' || !testCase.title.trim() ||
+  typeof testCase.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(testCase.id) ||
+  /^(?:page|widget|view|case)[_-]?\d+$/i.test(testCase.id)
+))
+if (casesWithInvalidNames.length) {
+  console.error(`[run-cases] Case id/title must use a page title or business goal, with id in lowercase kebab-case. Invalid: ${casesWithInvalidNames.map((testCase) => testCase.id || '(missing id)').join(', ')}`)
+  process.exit(1)
+}
+const appPages = config.appContext?.pages || []
+const casesWithInvalidPage = cases.filter((testCase) => !appPages.some((page) => page.id === testCase.pageId))
+if (casesWithInvalidPage.length) {
+  console.error(`[run-cases] Every case pageId must match appContext.pages. Invalid: ${casesWithInvalidPage.map((testCase) => testCase.pageId || '(missing pageId)').join(', ')}`)
+  process.exit(1)
+}
+const casesMissingPageUrl = cases.filter((testCase) => !testCase.pageUrl)
+if (casesMissingPageUrl.length) {
+  console.error(`[run-cases] Every case requires pageUrl. Missing: ${casesMissingPageUrl.map((testCase) => testCase.id).join(', ')}`)
   process.exit(1)
 }
 
@@ -45,6 +66,7 @@ fs.writeFileSync(path.join(runRoot, 'run-config.json'), JSON.stringify(config, n
 
 const selectors = {
   chatInput: [
+    'calcite-text-area textarea',
     'textarea[aria-label*="message" i]',
     'textarea[placeholder*="message" i]',
     'input[aria-label*="message" i]',
@@ -54,35 +76,25 @@ const selectors = {
     'button[aria-label*="send" i]',
     'button[title*="send" i]',
   ],
-  openChat: [
-    'button.assistant-anchor[aria-haspopup="true"]',
-    'button.assistant-anchor',
-    'button[aria-label*="chat" i]',
-    'button[title*="chat" i]',
-  ],
   ready: [
+    'calcite-text-area textarea',
     'textarea[aria-label*="message" i]',
     'textarea[placeholder*="message" i]',
     'input[aria-label*="message" i]',
     '[contenteditable="true"]',
   ],
 }
-const timeout = Number(config.timeouts?.turn || process.env.TEST_TURN_TIMEOUT || 45000)
 const readyTimeout = Number(config.timeouts?.ready || process.env.TEST_READY_TIMEOUT || 30000)
-const storageState = getArg('--storage-state', process.env.STORAGE_STATE || config.storageState)
-
-if (!storageState) {
-  console.error('[run-cases] Session handoff incomplete: provide --storage-state or config.storageState before running cases.')
-  process.exit(1)
-}
-if (!fs.existsSync(path.resolve(storageState))) {
-  console.error(`[run-cases] Session handoff incomplete: storage state not found at ${path.resolve(storageState)}`)
-  process.exit(1)
-}
+const turnTimeout = Number(config.timeouts?.turn || process.env.TEST_TURN_TIMEOUT || 120000)
 
 function defaultRunDir(slug = 'app') {
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
-  return path.join('artifacts', `${date}-${slug}-01`)
+  let sequence = 1
+  while (true) {
+    const runDir = path.join('artifacts', `${date}-${slug}-${String(sequence).padStart(2, '0')}`)
+    if (!fs.existsSync(runDir)) return runDir
+    sequence += 1
+  }
 }
 
 async function findVisibleLocator(page, candidates, wait = 0) {
@@ -99,116 +111,134 @@ async function findVisibleLocator(page, candidates, wait = 0) {
 }
 
 async function inspectSession(page) {
-  const pageInfo = await page.evaluate(() => ({
-    title: document.title,
-    url: location.href,
-    bodyText: document.body?.innerText?.slice(0, 4000) || '',
-    hasPasswordInput: Boolean(document.querySelector('input[type="password"]')),
-    hasLoginForm: Boolean(document.querySelector('form[action*="oauth" i], form[action*="sign" i]')),
-  })).catch(() => ({ title: '', url: page.url(), bodyText: '' }))
-  const loginUrl = /\/sharing\/.*oauth2|\/home\/sign-in|\/signin/i.test(pageInfo.url)
-  const loginTitle = /sign in|log in|登录/i.test(pageInfo.title)
-  const loginText = /sign in|log in|登录|用户名|username|password/i.test(pageInfo.bodyText)
-  if (loginUrl || loginTitle || pageInfo.hasPasswordInput || pageInfo.hasLoginForm || (loginText && !pageInfo.url.startsWith(config.url))) {
-    throw new Error([
-      '[run-cases] Session invalid or expired.',
-      `The shared session was redirected to a sign-in page: ${pageInfo.url}`,
-      'Agent action: ask the user to run capture-session.mjs, complete sign-in in the opened browser, and type READY before running cases again.',
+  await page.waitForFunction(() => Boolean(window._sessionManager), null, { timeout: readyTimeout })
+  await page.waitForFunction(
+    () => Boolean(window._sessionManager?.getMainSession?.()),
+    null,
+    { timeout: readyTimeout },
+  ).catch(() => {})
+  const sessionState = await page.evaluate(() => {
+    const sessionManager = window._sessionManager
+    if (sessionManager.getMainSession()) return 'signed-in'
+    return sessionManager.isMainSessionExpired() ? 'expired' : 'signed-out'
+  })
+  if (sessionState !== 'signed-in') {
+    const error = new Error([
+      `[run-cases] App session is ${sessionState}.`,
+      'Agent action: run probe-session.mjs and complete the app sign-in flow in the opened browser before running cases again.',
     ].join('\n'))
+    error.code = 'SESSION_INVALID'
+    throw error
   }
-  return pageInfo
+  return sessionState
 }
 
 async function dismissBlockingModals(page) {
   const deadline = Date.now() + readyTimeout
-  const confirmationPattern = /^(ok|okay|continue|confirm|accept|agree|got it|done|close|next|proceed|确定|确认|同意|继续|关闭|知道了|下一步)$/i
+  const graceDeadline = Date.now() + Math.min(5000, readyTimeout)
   let handled = 0
 
   while (Date.now() < deadline && handled < 5) {
     const dialogs = page.locator('[role="dialog"]:visible, dialog:visible')
     const count = await dialogs.count()
-    if (!count) return handled
-
-    let progressed = false
-    for (let index = 0; index < count; index += 1) {
-      const dialog = dialogs.nth(index)
-      const checkboxes = dialog.locator('input[type="checkbox"]:visible, [role="checkbox"]:visible')
-      for (let checkboxIndex = 0; checkboxIndex < await checkboxes.count(); checkboxIndex += 1) {
-        const checkbox = checkboxes.nth(checkboxIndex)
-        const checked = await checkbox.isChecked().catch(async () => (
-          (await checkbox.getAttribute('aria-checked')) === 'true'
-        ))
-        if (!checked) await checkbox.click()
-      }
-
-      const buttons = dialog.locator('button:visible, [role="button"]:visible, input[type="button"]:visible, input[type="submit"]:visible')
-      for (let buttonIndex = 0; buttonIndex < await buttons.count(); buttonIndex += 1) {
-        const button = buttons.nth(buttonIndex)
-        const label = [
-          await button.innerText().catch(() => ''),
-          await button.getAttribute('aria-label').catch(() => ''),
-          await button.getAttribute('title').catch(() => ''),
-          await button.getAttribute('value').catch(() => ''),
-        ].join(' ').trim()
-        if (confirmationPattern.test(label)) {
-          await button.click()
-          handled += 1
-          progressed = true
-          break
-        }
-      }
-      if (progressed) break
+    if (!count) {
+      if (handled > 0 || Date.now() >= graceDeadline) return handled
+      await page.waitForTimeout(250)
+      continue
     }
-    if (!progressed) {
+
+    const closed = await page.evaluate(() => {
+      const store = window._appStore
+      const state = store?.getState?.()
+      const dialogId = state?.appRuntimeInfo?.currentDialogId
+      const dialogInfos = state?.appRuntimeInfo?.dialogInfos
+      if (!store?.dispatch || !dialogId) return false
+      const currentInfos = dialogInfos?.toJS?.() || dialogInfos || {}
+      store.dispatch({
+        type: 'DIALOG_INFOS_CHANGED',
+        dialogInfos: {
+          ...currentInfos,
+          [dialogId]: {
+            ...(currentInfos[dialogId] || {}),
+            canClose: true,
+            checked: true,
+            isClosed: true,
+          },
+        },
+      })
+      store.dispatch({ type: 'CURRENT_DIALOG_CHANGED', dialogId: null })
+      return true
+    })
+    if (!closed) {
       const label = await dialogs.first().getAttribute('aria-label').catch(() => '')
       const text = (await dialogs.first().innerText().catch(() => '')).trim().slice(0, 300)
       throw new Error([
-        '[run-cases] A blocking app dialog requires manual confirmation.',
+        '[run-cases] A visible app dialog has no current runtime dialog ID.',
         `Dialog: ${label || text || '(unlabeled dialog)'}`,
-        'Agent action: ask the user to complete the dialog, including any required checkbox, then run the cases again.',
+        'Agent action: refresh app context before running cases again.',
       ].join('\n'))
     }
-    await page.waitForTimeout(250)
+    await dialogs.first().waitFor({ state: 'hidden', timeout: readyTimeout })
+    handled += 1
   }
-  return handled
+  throw new Error('[run-cases] Startup dialog did not close before timeout.')
 }
 
-async function validateSessionAndChat(page) {
-  try {
-    await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: readyTimeout })
-    await waitForNetworkIdle(page)
-    await inspectSession(page)
-    await dismissBlockingModals(page)
-    await inspectSession(page)
-  } catch (error) {
-    if (error.message.startsWith('[run-cases] Session invalid')) throw error
-    throw new Error([
-      '[run-cases] Session validation failed.',
-      error.message,
-      'Agent action: ask the user to verify the app URL and refresh the shared session with capture-session.mjs.',
-    ].join('\n'))
+async function openAssistantPanel(page) {
+  const opened = await page.evaluate(() => {
+    const store = window._appStore
+    if (!store?.dispatch) return false
+    store.dispatch({ type: 'ASSISTANT_PANEL_OPEN_CHANGED', isOpen: true })
+    return true
+  })
+  if (!opened) throw new Error('[run-cases] AI Chat panel cannot be opened through the app runtime store.')
+  await page.waitForFunction(() => {
+    const isOpen = window._appStore?.getState?.()?.appRuntimeInfo?.isAssistantPanelOpen
+    const panel = document.querySelector('.assistant-panel')
+    return isOpen === true && panel && !panel.classList.contains('hide')
+  }, { timeout: readyTimeout })
+}
+
+async function changeCasePage(page, testCase, isFirstCase) {
+  if (isFirstCase) {
+    await page.goto(testCase.pageUrl, { waitUntil: 'domcontentloaded', timeout: readyTimeout })
+    return
   }
 
-  const existingInput = await findVisibleLocator(page, selectors.ready, readyTimeout)
-  if (!existingInput) {
-    const openChat = await findVisibleLocator(page, selectors.openChat, readyTimeout)
-    if (openChat) await openChat.click()
+  const conversationBefore = await page.evaluate(() => ({
+    threadId: window._assistantRuntime?.threadId || null,
+    historyLength: window._assistantRuntime?.chatHistory?.length || 0,
+  }))
+  const changed = await page.evaluate((pageId) => {
+    if (!window._urlManager?.changePage) return false
+    window._urlManager.changePage(pageId)
+    return true
+  }, testCase.pageId)
+  if (!changed) throw new Error('[run-cases] ExB URL manager is unavailable for SPA page navigation.')
+  await page.waitForFunction(
+    (pageId) => window._appStore?.getState?.()?.appRuntimeInfo?.currentPageId === pageId,
+    testCase.pageId,
+    { timeout: readyTimeout },
+  )
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  }))
+  const conversationAfter = await page.evaluate(() => ({
+    threadId: window._assistantRuntime?.threadId || null,
+    historyLength: window._assistantRuntime?.chatHistory?.length || 0,
+  }))
+  if (
+    conversationBefore.threadId &&
+    (conversationAfter.threadId !== conversationBefore.threadId || conversationAfter.historyLength < conversationBefore.historyLength)
+  ) {
+    throw new Error('[run-cases] ExB SPA page navigation did not preserve the Assistant conversation.')
   }
-  const chatInput = await findVisibleLocator(page, selectors.ready, readyTimeout)
-  if (!chatInput) {
-    throw new Error([
-      '[run-cases] AI Chat is unavailable or not enabled for this app.',
-      'The session is valid, but no supported AI Chat launcher or message input was found.',
-      'Agent action: ask the user to enable/configure AI Chat in the Experience Builder app, publish the change if required, and run the cases again.',
-    ].join('\n'))
-  }
-  return { pageInfo: await inspectSession(page), chatInput }
 }
 
 async function readRuntime(page) {
   return page.evaluate((language) => {
     const runtime = window._assistantRuntime
-    if (!runtime) return { available: false, transcript: null }
+    if (!runtime) return { available: false, transcript: null, snapshot: null }
     const clip = (value, limit = 20_000) => {
       if (typeof value !== 'string') return value
       return value.length > limit ? `${value.slice(0, limit)}...[truncated ${value.length - limit} chars]` : value
@@ -232,6 +262,9 @@ async function readRuntime(page) {
       description: step?.description || null,
       agent: step?.agent || null,
       humanMessageId: step?.humanMessageId || null,
+      status: step?.status || null,
+      retry: step?.retry ?? null,
+      actionExecutionIds: step?.actionExecutionIds || [],
       output: step?.output ? {
         type: step.output.type || null,
         description: step.output.description || null,
@@ -250,20 +283,62 @@ async function readRuntime(page) {
       humanMessageId: step?.humanMessageId || null,
     }))
     const chatHistory = (runtime.chatHistory || []).map(pickMessage)
-    const userInputs = (state.userInputs || []).map(pickMessage)
+    const userInputs = (state.userInputs || []).map((input) => ({
+      type: input?.type || null,
+      content: contentText(input?.content),
+      context: input?.context || null,
+    }))
     const messages = (state.messages || []).map(pickMessage)
+    const appManager = typeof window._am === 'function' ? window._am() : window._am
+    const configuredWidgets = appManager?.appConfig?.widgets || {}
     const context = {
-      visibleWidgets: (state.context?.visibleWidgets || []).map((widget) => ({
-        widgetId: widget?.widgetId || widget?.id || null,
-        name: widget?.name || null,
-        type: widget?.type || null,
-      })),
+      visibleWidgets: (state.context?.visibleWidgets || []).map((widget) => {
+        const widgetId = widget?.widgetId || widget?.id || null
+        const configured = widgetId ? configuredWidgets[widgetId] : null
+        return {
+          widgetId,
+          label: widget?.name || configured?.label || configured?.title || configured?.name || widgetId || null,
+          type: widget?.type || configured?.type || null,
+          uri: configured?.uri || null,
+        }
+      }),
+      selectedDataSourceIds: state.context?.selectedDataSourceIds || [],
       aiRenderers: (state.context?.aiRenderers || []).map((renderer) => ({
         name: renderer?.name || null,
         description: renderer?.description || null,
       })),
     }
     const transcript = runtime.debugTranscript ?? null
+    const snapshot = {
+      runtimeReady: runtime.runtimeReady ?? null,
+      threadId: runtime.threadId || null,
+      streamEpoch: runtime.streamEpoch ?? null,
+      isWorking: runtime.isWorking ?? null,
+      chatHistory,
+      userInputs,
+      messages,
+      planReason: state.planReason || null,
+      reasoningMetadata: state.reasoningMetadata || null,
+      plannedSteps,
+      pendingSteps,
+      completedSteps,
+      historicalCompletedSteps: (state.historicalCompletedSteps || runtime.historicalCompletedSteps || []).map((step) => ({
+        description: step?.description || null,
+        agent: step?.agent || null,
+        status: step?.status || null,
+        output: step?.output ? {
+          type: step.output.type || null,
+          description: step.output.description || null,
+          payload: contentText(step.output.payload),
+        } : null,
+        actionExecutionIds: step?.actionExecutionIds || [],
+      })),
+      context,
+      evaluation: state.evaluation || null,
+      suggestions: state.suggestions || [],
+      aiRenderer: state.aiRenderer || null,
+      transcript,
+    }
     const sectionLabels = language === 'zh'
       ? {
           'user-question': '用户提问',
@@ -287,7 +362,6 @@ async function readRuntime(page) {
           '',
           ...transcript.flatMap((turn, index) => [
             `## Turn ${index + 1}`,
-            `- Message ID: ${turn.messageId || '(missing)'}`,
             `- Status: ${turn.status || 'running'}`,
             `- Started: ${turn.startedAt || '(missing)'}`,
             ...(turn.endedAt ? [`- Ended: ${turn.endedAt}`] : []),
@@ -304,6 +378,7 @@ async function readRuntime(page) {
       : ''
     return {
       available: true,
+      snapshot,
       transcript,
       debugText,
       runtimeKeys: Object.keys(runtime),
@@ -320,7 +395,6 @@ async function readRuntime(page) {
       pendingSteps,
       completedSteps,
       context,
-      mentionedVisibleWidgetIds: state.mentionedVisibleWidgetIds || [],
       evaluation: state.evaluation || null,
       suggestions: state.suggestions || [],
       signal: {
@@ -365,51 +439,132 @@ function terminalStatus(transcript) {
 function runtimeTerminalStatus(runtime, before) {
   const completedBefore = before?.signal?.completedStepCount || 0
   const completedAfter = runtime?.signal?.completedStepCount || 0
+  const messagesBefore = before?.signal?.messageCount || 0
+  const messagesAfter = runtime?.signal?.messageCount || 0
+  const failedStep = (runtime?.completedSteps || []).slice(-1).find((step) => ['failed', 'failure', 'error'].includes(String(step?.status || '').toLowerCase()))
+  if (failedStep) return 'failed'
   if (runtime?.isWorking === false && completedAfter > completedBefore) return 'completed'
+  if (runtime?.isWorking === false && messagesAfter > messagesBefore && (runtime?.pendingSteps?.length || 0) === 0) return 'completed'
   return null
 }
 
-async function waitForTurn(page, before, turnStartedAt) {
-  const deadline = Date.now() + timeout
-  while (Date.now() < deadline) {
+async function waitForTurn(page, before, deadline) {
+  const trace = []
+  let previousSignal = JSON.stringify(before.signal)
+  while (true) {
     const runtime = await readRuntime(page)
     const changed = JSON.stringify(runtime.signal) !== JSON.stringify(before.signal)
+    const signal = JSON.stringify(runtime.signal)
+    if (signal !== previousSignal) {
+      trace.push({ capturedAt: new Date().toISOString(), signal: runtime.signal, snapshot: runtime.snapshot })
+      previousSignal = signal
+    }
     const status = terminalStatus(runtime.transcript) || runtimeTerminalStatus(runtime, before)
-    if (changed && status) return { ...runtime, status }
+    if (changed && status) return { ...runtime, status, trace }
+    if (Date.now() >= deadline) return { ...runtime, status: 'timeout', trace }
     await page.waitForTimeout(500)
-  }
-  const runtime = await readRuntime(page)
-  return {
-    ...runtime,
-    status: runtime.transcript == null ? 'runtime-unavailable' : 'timeout',
-    turnStartedAt,
   }
 }
 
+async function getRendererContainerCount(page) {
+  return page.evaluate(() => {
+    const visit = (root) => {
+      if (!root?.querySelectorAll) return 0
+      let count = root.querySelectorAll('.chat-message-extra').length
+      root.querySelectorAll('*').forEach((element) => {
+        if (element.shadowRoot) count += visit(element.shadowRoot)
+      })
+      return count
+    }
+    return visit(document)
+  }).catch(() => 0)
+}
+
+async function waitForRenderer(page, runtime, deadline, containerCountBefore) {
+  if (!runtime?.snapshot?.aiRenderer) return { status: 'not-requested' }
+
+  let stableSignature = null
+  let stableSince = null
+  while (Date.now() < deadline) {
+    const renderer = await page.evaluate(() => {
+      const visit = (root, matches = []) => {
+        if (!root) return matches
+        if (root.querySelectorAll) {
+          matches.push(...root.querySelectorAll('.chat-message-extra'))
+          root.querySelectorAll('*').forEach((element) => {
+            if (element.shadowRoot) visit(element.shadowRoot, matches)
+          })
+        }
+        return matches
+      }
+      const containers = visit(document)
+      const container = containers.at(-1)
+      if (!container || containers.length <= containerCountBefore) {
+        return { attached: false, loading: false, signature: null, containerCount: containers.length }
+      }
+
+      const loadingSelector = '.jimu-loading, .jimu-primary-loading, .jimu-secondary-loading, .donut-loading, .bar-loading, .dot-loading, .skeleton-loading'
+      const inspect = (root) => {
+        let loading = Boolean(root.matches?.(loadingSelector) || root.querySelector?.(loadingSelector))
+        let html = root.innerHTML || ''
+        root.querySelectorAll?.('*').forEach((element) => {
+          if (element.shadowRoot) {
+            const nested = inspect(element.shadowRoot)
+            loading ||= nested.loading
+            html += nested.html
+          }
+        })
+        return { loading, html }
+      }
+      const state = inspect(container)
+      const rect = container.getBoundingClientRect()
+      return {
+        attached: true,
+        loading: state.loading,
+        signature: `${state.html.length}:${Math.round(rect.width)}:${Math.round(rect.height)}:${container.textContent?.trim().length || 0}`,
+        containerCount: containers.length,
+      }
+    }).catch(() => ({ attached: false, loading: false, signature: null, containerCount: 0 }))
+
+    if (renderer.attached && !renderer.loading) {
+      if (renderer.signature !== stableSignature) {
+        stableSignature = renderer.signature
+        stableSince = Date.now()
+      } else if (Date.now() - stableSince >= 1_000) {
+        return { status: 'ready', signature: renderer.signature, containerCount: renderer.containerCount }
+      }
+    } else {
+      stableSignature = null
+      stableSince = null
+    }
+    await page.waitForTimeout(250)
+  }
+  return { status: 'timeout', containerCountBefore }
+}
+
 async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
-  const detailedTranscript = [...turnRecords]
-    .reverse()
-    .map((turn) => turn.debugText)
-    .find(Boolean) || runtime.debugText || ''
   const lines = [
-    `# Case Debug: ${caseInfo.title || caseInfo.id}`,
+    `# AI Chat Debug: ${caseInfo.title || caseInfo.id}`,
     '',
     `- Case ID: ${caseInfo.id}`,
-    `- Runtime available: ${runtime.available ? 'yes' : 'no'}`,
     `- Turns executed: ${turnRecords.length}`,
-    '',
-    '## Turn Status',
-    '',
-    ...turnRecords.map((turn) => `- Turn ${turn.index}: ${turn.status}${turn.runtimeStatus ? ` (runtime: ${turn.runtimeStatus})` : ''}`),
-    '',
-    '## AssistantRuntime Debug Log',
-    '',
-    detailedTranscript || 'No detailed AssistantRuntime entries were available.',
-    '',
-    '## Turn Evidence',
-    '',
-    '```json',
-    JSON.stringify(turnRecords.map((turn) => ({
+  ]
+  appendDebugSection(lines, 'Case Context', [
+    caseInfo.pageId ? `Page ID: ${caseInfo.pageId}` : null,
+    caseInfo.pageTitle ? `Page: ${caseInfo.pageTitle}` : null,
+  ])
+  turnRecords.forEach((turn) => appendTurnDebug(lines, turn))
+  if (!turnRecords.length) lines.push('', '## AI Information Flow', '', 'No user turn was executed, so no AI Chat information flow was captured.')
+  if (runtime.error) lines.push('', `- Runtime read error: ${runtime.error}`)
+  fs.writeFileSync(path.join(caseDir, 'case-debug.md'), lines.join('\n') + '\n')
+  fs.writeFileSync(path.join(caseDir, 'case-debug.json'), JSON.stringify({
+    case: {
+      id: caseInfo.id,
+      title: caseInfo.title || null,
+      pageId: caseInfo.pageId || null,
+      pageTitle: caseInfo.pageTitle || null,
+    },
+    turns: turnRecords.map((turn) => ({
       index: turn.index,
       prompt: turn.prompt,
       status: turn.status,
@@ -417,31 +572,122 @@ async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
       startedAt: turn.startedAt,
       endedAt: turn.endedAt || null,
       durationMs: turn.durationMs ?? null,
-      runtimeBefore: turn.runtimeBefore?.signal || null,
-      runtimeAfter: turn.runtimeAfter ? {
-        signal: turn.runtimeAfter.signal || null,
-        threadId: turn.runtimeAfter.threadId || null,
-        reasoningMetadata: turn.runtimeAfter.reasoningMetadata || null,
-        plannedSteps: turn.runtimeAfter.plannedSteps || [],
-        completedSteps: turn.runtimeAfter.completedSteps || [],
-        evaluation: turn.runtimeAfter.evaluation || null,
-      } : null,
       error: turn.error || null,
-    })), null, 2),
-    '```',
+      lifecycle: turn.lifecycle || null,
+      runtimeBefore: turn.runtimeBefore?.snapshot || null,
+      runtimeTrace: turn.runtimeAfter?.trace || [],
+      runtimeAfter: turn.runtimeAfter?.snapshot || null,
+      rendererWait: turn.runtimeAfter?.rendererWait || null,
+    })),
+    finalRuntime: runtime.snapshot || null,
+  }, null, 2) + '\n')
+}
+
+function appendTurnDebug(lines, turn) {
+  const before = turn.runtimeBefore || {}
+  const runtime = turn.runtimeAfter || {}
+  const transcriptTurn = Array.isArray(runtime.transcript) ? runtime.transcript.at(-1) : null
+  const transcriptEntries = transcriptTurn?.entries || []
+  const finalEntries = transcriptEntries.filter((entry) => entry?.section === 'final-result')
+  const errorEntries = transcriptEntries.filter((entry) => entry?.section === 'error')
+  const intermediateResults = transcriptEntries.filter((entry) => entry?.section === 'intermediate-result')
+  const plannedSteps = newItems(before.plannedSteps, runtime.plannedSteps)
+  const pendingSteps = newItems(before.pendingSteps, runtime.pendingSteps)
+  const currentMessageId = runtime.userInputs?.at(-1)?.id || runtime.signal?.latestCompletedMessageId
+  const completedSteps = currentMessageId
+    ? (runtime.completedSteps || []).filter((step) => step.humanMessageId === currentMessageId)
+    : newItems(before.completedSteps, runtime.completedSteps)
+  const rendererSteps = completedSteps.filter((step) => /renderer|render/i.test(`${step.output?.type || ''} ${step.output?.description || ''} ${step.description || ''}`))
+  const finalMessage = newItems(before.messages, runtime.messages)
+    .reverse()
+    .find((message) => message?.content && message.type !== 'human')
+  const actionResponse = completedSteps
+    .slice()
+    .reverse()
+    .find((step) => step.output?.payload)?.output?.payload || null
+  const finalContent = finalEntries.at(-1)?.content || finalMessage?.content || actionResponse || null
+
+  lines.push(
     '',
-    '## Runtime Snapshots',
-    '',
-    '```json',
-    JSON.stringify({ final: runtime, turns: turnRecords.map((turn) => ({
-      index: turn.index,
-      runtimeBefore: turn.runtimeBefore,
-      runtimeAfter: turn.runtimeAfter,
-    })) }, null, 2),
-    '```',
+    `## Turn ${turn.index}`,
+    `- Status: ${turn.status}${turn.runtimeStatus ? ` (${turn.runtimeStatus})` : ''}`,
+    `- Duration: ${formatDuration(turn.durationMs)}`,
+  )
+  if (turn.error) lines.push(`- Runner error: ${turn.error}`)
+
+  appendDebugSection(lines, 'User Prompt', [turn.prompt])
+  appendDebugSection(lines, 'Execution Summary', formatExecutionSummary(runtime))
+
+  appendDebugSection(lines, 'Reasoning and Plan', [
+    runtime.planReason,
+    runtime.reasoningMetadata?.status ? `Reasoning status: ${runtime.reasoningMetadata.status}` : null,
+    ...plannedSteps.map((step) => formatStep(step, 'Planned')),
+    ...pendingSteps.map((step) => formatStep(step, 'Pending')),
+    ...transcriptEntries.filter((entry) => entry?.section === 'intermediate-reasoning').map((entry) => entry.content),
+  ])
+  appendDebugSection(lines, 'Intermediate Results', intermediateResults.map((entry) => (
+    entry.title ? `${entry.title}: ${entry.content}` : entry.content
+  )))
+  const plannedDescriptions = new Set([...plannedSteps, ...pendingSteps].map((step) => step.description).filter(Boolean))
+  appendDebugSection(lines, 'Sub-agents and Actions', completedSteps.map((step) => formatStep(step, 'Completed', {
+    includeDescription: Boolean(step.description && !plannedDescriptions.has(step.description)),
+  })))
+  appendDebugSection(lines, 'Renderers', rendererSteps.map((step) => formatStep(step, 'Rendered')))
+  appendDebugSection(lines, 'Agent Response', [finalContent || '(response not captured)'])
+  appendDebugSection(lines, 'Errors', [turn.error, ...errorEntries.map((entry) => entry.content)])
+}
+
+function formatDuration(durationMs) {
+  return typeof durationMs === 'number' ? `${(durationMs / 1000).toFixed(1)}s` : 'unknown'
+}
+
+function formatExecutionSummary(runtime = {}) {
+  const signal = runtime.signal || {}
+  const context = runtime.context || {}
+  const evaluation = runtime.evaluation
+  const lines = [
+    `Runtime: ${runtime.runtimeReady === true ? 'ready' : 'not ready'}; working: ${runtime.isWorking === true ? 'yes' : 'no'}; stream epoch: ${runtime.streamEpoch ?? 'unknown'}.`,
+    `Steps: planned ${runtime.plannedSteps?.length || 0}, pending ${runtime.pendingSteps?.length || 0}, completed ${runtime.completedSteps?.length || 0}.`,
+    `Signals: messages ${signal.messageCount ?? 0}, user inputs ${signal.userInputCount ?? 0}, completed steps ${signal.completedStepCount ?? 0}.`,
+    evaluation?.decision?.action ? `Evaluation: ${evaluation.decision.action}${evaluation.confidence !== undefined && evaluation.confidence !== null ? ` (confidence ${evaluation.confidence})` : ''}.` : null,
+    context.selectedDataSourceIds?.length ? `Selected data sources: ${context.selectedDataSourceIds.join(', ')}.` : null,
+    runtime.aiRenderer?.name ? `Selected renderer: ${runtime.aiRenderer.name}.` : null,
   ]
-  if (runtime.error) lines.splice(4, 0, `- Runtime read error: ${runtime.error}`)
-  fs.writeFileSync(path.join(caseDir, 'case-debug.md'), lines.join('\n') + '\n')
+  return lines.filter(Boolean)
+}
+
+function newItems(before = [], after = []) {
+  return (after || []).slice((before || []).length)
+}
+
+function appendDebugSection(lines, title, values) {
+  const items = values.filter(Boolean)
+  if (!items.length) return
+  lines.push('', `### ${title}`, '')
+  items.forEach((item) => {
+    const [firstLine, ...rest] = String(item).split('\n')
+    lines.push(`- ${firstLine}`, ...rest)
+  })
+}
+
+function formatStep(step, state, options = {}) {
+  const agent = step.agent ? `Agent ${step.agent}` : 'Agent unavailable'
+  const description = step.description || 'No description'
+  const stepOutput = step.output
+  const statusText = step.status ? ` Status: ${step.status}.` : ''
+  const retryText = step.retry ? ' Retried.' : ''
+  const actionText = step.actionExecutionIds?.length ? ` Action executions: ${step.actionExecutionIds.join(', ')}.` : ''
+  const descriptionText = options.includeDescription === false ? '' : `; ${description}`
+  const outputText = stepOutput ? ` Output: ${stepOutput.type || 'result'}.` : ''
+  return `${state}: ${agent}${descriptionText}.${statusText}${retryText}${actionText}${outputText}`
+}
+
+function stringifyDebugValue(value) {
+  try {
+    return typeof value === 'string' ? value : JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
 }
 
 async function runCase(page, testCase, index) {
@@ -449,9 +695,6 @@ async function runCase(page, testCase, index) {
   fs.mkdirSync(caseDir, { recursive: true })
   const result = {
     id: testCase.id,
-    title: testCase.title,
-    intent: testCase.intent,
-    expectedBehavior: testCase.expectedBehavior,
     startedAt: new Date().toISOString(),
     status: 'running',
     turns: [],
@@ -466,44 +709,57 @@ async function runCase(page, testCase, index) {
     const turn = { index: turnIndex + 1, prompt, startedAt: turnStartedAt, status: 'failed' }
     turn.runtimeBefore = runtime
     try {
+      const rendererContainerCountBefore = await getRendererContainerCount(page)
       const input = await findVisibleLocator(page, selectors.chatInput, readyTimeout)
       if (!input) throw new Error('Chat input was not found using the built-in Playwright locators.')
       await input.fill(prompt)
       const send = await findVisibleLocator(page, selectors.sendButton)
       if (send) await send.click()
       else await input.press('Enter')
-      const after = await waitForTurn(page, runtime, turnStartedAt)
+      const turnDeadline = turnStartedMs + turnTimeout
+      const after = await waitForTurn(page, runtime, turnDeadline)
+      after.rendererWait = await waitForRenderer(page, after, turnDeadline, rendererContainerCountBefore)
+      if (after.status !== 'timeout' && after.rendererWait.status === 'timeout') after.status = 'timeout'
       runtime = after
       turn.runtimeAfter = after
       turn.runtimeStatus = after.status
       turn.debugText = after.debugText || ''
       turn.status = after.status
       turn.endedAt = new Date().toISOString()
-      await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}.png`), fullPage: true })
+      if (after.status === 'timeout') {
+        turn.error = after.rendererWait?.status === 'timeout'
+          ? `AI renderer did not finish within the ${Math.round(turnTimeout / 1000)} second turn limit; the case was stopped and the next case will continue.`
+          : `Turn exceeded the ${Math.round(turnTimeout / 1000)} second limit; the case was stopped and the next case will continue.`
+        console.log(`[run-cases] Turn ${turn.index} exceeded ${Math.round(turnTimeout / 1000)}s; stopping case ${testCase.id}.`)
+        turn.status = 'timeout'
+      }
+      const screenshotName = `turn-${String(turnIndex + 1).padStart(2, '0')}${turn.error ? '-error' : ''}.png`
+      await page.screenshot({ path: path.join(caseDir, screenshotName), fullPage: true })
     } catch (error) {
       turn.error = error.message
       turn.runtimeAfter = await readRuntime(page)
       turn.runtimeStatus = turn.runtimeAfter.status || null
       turn.debugText = turn.runtimeAfter.debugText || ''
       turn.endedAt = new Date().toISOString()
+      turn.lifecycle = page._caseLifecycle
       await page.screenshot({ path: path.join(caseDir, `turn-${String(turnIndex + 1).padStart(2, '0')}-error.png`), fullPage: true }).catch(() => {})
     }
     turn.durationMs = Date.now() - turnStartedMs
     turnRecords.push(turn)
-    const latestStep = [...(turn.runtimeAfter?.completedSteps || [])].reverse()[0]
     result.turns.push({
       index: turn.index,
       prompt: turn.prompt,
-      agentResponse: latestStep?.output?.payload || null,
       status: turn.status,
       runtimeStatus: turn.runtimeStatus || null,
       startedAt: turn.startedAt,
       endedAt: turn.endedAt || null,
       durationMs: turn.durationMs,
       error: turn.error || null,
+      lifecycle: turn.lifecycle || null,
       screenshot: `turn-${String(turn.index).padStart(2, '0')}${turn.error ? '-error' : ''}.png`,
     })
     fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
+    if (turn.status === 'timeout') break
   }
 
   result.status = result.turns.some((turn) => [
@@ -518,49 +774,49 @@ async function runCase(page, testCase, index) {
   return result
 }
 
-const browser = await chromium.launch({ headless: mode === 'headless' })
 const contextOptions = { ignoreHTTPSErrors: true }
-contextOptions.storageState = path.resolve(storageState)
-if (config.startup?.viewport === 'mobile') contextOptions.viewport = { width: 390, height: 844 }
-if (config.startup?.viewport === 'desktop-large') contextOptions.viewport = { width: 1440, height: 1000 }
-const context = await browser.newContext(contextOptions)
+contextOptions.viewport = getViewport(config.startup?.viewport || 'desktop')
+let context = null
+if (cacheDir) {
+  fs.mkdirSync(cacheDir, { recursive: true })
+  context = await chromium.launchPersistentContext(cacheDir, {
+    ...contextOptions,
+    headless: mode === 'headless',
+  })
+  console.log(`[run-cases] Reusing browser cache: ${cacheDir}`)
+}
 const results = []
+const existingPages = context.pages()
+const page = existingPages[0] || await context.newPage()
+await Promise.all(existingPages.slice(1).map(async (extraPage) => extraPage.close()))
 try {
-  let preflightError = null
-  const preflightPage = await context.newPage()
-  try {
-    await validateSessionAndChat(preflightPage)
-    console.log('[run-cases] Session is valid and AI Chat is available.')
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    fs.writeFileSync(path.join(runRoot, 'preflight-error.json'), JSON.stringify({
-      status: 'failed',
-      error: message,
-      createdAt: new Date().toISOString(),
-    }, null, 2) + '\n')
-    console.error(message)
-    process.exitCode = 1
-    preflightError = message
-  } finally {
-    await preflightPage.close()
-  }
-  if (!preflightError) for (let index = 0; index < cases.length; index += 1) {
+  for (let index = 0; index < cases.length; index += 1) {
     const testCase = cases[index]
-    const page = await context.newPage()
+    const lifecycle = { pageCrashed: false, pageClosed: false, contextClosed: false, consoleErrors: [], requestFailures: [] }
+    page._caseLifecycle = lifecycle
+    const onCrash = () => { lifecycle.pageCrashed = true }
+    const onPageClose = () => { lifecycle.pageClosed = true }
+    const onContextClose = () => { lifecycle.contextClosed = true }
+    const onConsole = (message) => {
+      if (message.type() === 'error' && lifecycle.consoleErrors.length < 20) lifecycle.consoleErrors.push(message.text())
+    }
+    const onRequestFailed = (request) => {
+      if (lifecycle.requestFailures.length < 20) lifecycle.requestFailures.push({ url: request.url(), error: request.failure()?.errorText || null })
+    }
+    page.on('crash', onCrash)
+    page.on('close', onPageClose)
+    context.on('close', onContextClose)
+    page.on('console', onConsole)
+    page.on('requestfailed', onRequestFailed)
     try {
-      await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: readyTimeout })
-      await waitForNetworkIdle(page)
+      await changeCasePage(page, testCase, index === 0)
       await inspectSession(page)
       await dismissBlockingModals(page)
-      await inspectSession(page)
-      if (config.startup?.openChat) {
-        const openChat = await findVisibleLocator(page, selectors.openChat, readyTimeout)
-        if (openChat) await openChat.click()
-      }
-      if (config.startup?.requireVisibleChat !== false) {
-        const ready = await findVisibleLocator(page, selectors.ready, readyTimeout)
-        if (!ready) throw new Error('Chat input was not visible using the built-in Playwright locators.')
-      }
+      if (index === 0) await page.waitForLoadState('networkidle', { timeout: 0 })
+      await openAssistantPanel(page)
+      const ready = await findVisibleLocator(page, selectors.ready, readyTimeout)
+      if (!ready) throw new Error('Chat input was not visible using the built-in Playwright locators.')
+      await ready.waitFor({ state: 'visible', timeout: readyTimeout })
       console.log(`[run-cases] Running ${testCase.id} (${index + 1}/${cases.length})`)
       results.push(await runCase(page, testCase, index))
     } catch (error) {
@@ -572,41 +828,62 @@ try {
         title: testCase.title,
         status: 'failed',
         error: message,
+        lifecycle,
         startedAt: new Date().toISOString(),
         endedAt: new Date().toISOString(),
         handoffFailure: true,
       }
       await page.screenshot({ path: path.join(caseDir, 'startup-error.png'), fullPage: true }).catch(() => {})
       fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
-      fs.writeFileSync(path.join(caseDir, 'case-debug.md'), `# Case Debug: ${testCase.title || testCase.id}\n\n- Startup failed before turn execution.\n- Error: ${message}\n`)
+      fs.writeFileSync(path.join(caseDir, 'case-debug.md'), [
+        `# AI Chat Debug: ${testCase.title || testCase.id}`,
+        '',
+        '## AI Information Flow',
+        '',
+        'No user turn was executed, so no AI Chat information flow was captured.',
+        '',
+        '### Startup Error',
+        '',
+        `- ${message.split('\n')[0]}`,
+        '',
+        '### Lifecycle Evidence',
+        '',
+        `- Page crashed: ${lifecycle.pageCrashed}`,
+        `- Page closed: ${lifecycle.pageClosed}`,
+        `- Context closed: ${lifecycle.contextClosed}`,
+        ...(lifecycle.consoleErrors.length ? [`- Console errors: ${lifecycle.consoleErrors.join(' | ')}`] : []),
+        ...(lifecycle.requestFailures.length ? [`- Request failures: ${lifecycle.requestFailures.map((failure) => `${failure.url} (${failure.error || 'unknown'})`).join(' | ')}`] : []),
+      ].join('\n') + '\n')
       results.push(result)
+      if (error?.code === 'SESSION_INVALID') break
     } finally {
-      await page.close()
+      page.off('crash', onCrash)
+      page.off('close', onPageClose)
+      context.off('close', onContextClose)
+      page.off('console', onConsole)
+      page.off('requestfailed', onRequestFailed)
     }
   }
 } finally {
+  await page.close().catch(() => {})
   await context.close()
-  await browser.close()
-}
-
-async function waitForNetworkIdle(page) {
-  try {
-    await page.waitForLoadState('networkidle', { timeout: readyTimeout })
-  } catch {
-    console.log('[run-cases] Network idle was not reached; continuing with the configured UI readiness check.')
-  }
 }
 
 const summary = {
   config: configPath,
   url: config.url,
   mode,
+  cache: cacheDir ? { enabled: true, directory: cacheDir } : { enabled: false },
   startedAt: results[0]?.startedAt || new Date().toISOString(),
   endedAt: new Date().toISOString(),
   total: results.length,
   passed: results.filter((result) => result.status === 'completed').length,
   failed: results.filter((result) => result.status === 'failed').length,
-  cases: results.map(({ id, title, status }) => ({ id, title, status })),
+  cases: results.map(({ id, status }) => ({
+    id,
+    status,
+    directory: id || null,
+  })),
 }
 fs.writeFileSync(path.join(runRoot, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
 console.log(`[run-cases] Wrote artifacts to ${runRoot}`)

@@ -1,0 +1,89 @@
+{
+  "slug": "nycitymap-holistic-testing",
+  "url": "https://experiencedev.arcgis.com/experience/<app-id>/",
+  "language": "en",
+  "startup": {
+    "viewport": "desktop"
+  },
+  "appContext": {
+    "app": {
+      "title": "NYCityMap - Holistic testing"
+    },
+    "pages": [
+      {
+        "id": "page_0",
+        "title": "Lot Info",
+        "widgets": [
+          {
+            "id": "widget_1",
+            "label": "Header",
+            "uri": "widgets/layout/fixed/",
+            "widgets": [
+              {"id": "widget_2", "label": "App Logo", "uri": "widgets/common/image/"},
+              {"id": "widget_3", "label": "Nav Menu 1", "uri": "widgets/common/menu/"}
+            ]
+          },
+          {
+            "id": "widget_199",
+            "label": "Widget Controller 2",
+            "uri": "widgets/common/controller/",
+            "widgets": [
+              {"id": "widget_200", "label": "Share", "uri": "widgets/common/share/"}
+            ]
+          }
+        ]
+      },
+      {
+        "id": "page_1",
+        "title": "Map Explorer",
+        "widgets": [
+          {
+            "id": "widget_188",
+            "label": "Map 3",
+            "uri": "widgets/arcgis/arcgis-map/",
+            "useDataSources": [{"dataSourceId": "dataSource_21", "mainDataSourceId": "dataSource_21"}],
+            "widgets": [
+              {"id": "widget_191", "label": "Search", "uri": "widgets/common/search/"},
+              {"id": "widget_127", "label": "Map Layers 2", "uri": "widgets/arcgis/map-layers/"}
+            ]
+          },
+          {
+            "id": "widget_192",
+            "label": "Near Me (Beta)",
+            "uri": "widgets/arcgis/near-me/",
+            "useDataSources": [{"dataSourceId": "dataSource_21-...", "rootDataSourceId": "dataSource_21"}]
+          }
+        ]
+      }
+    ],
+    "dataSources": [
+      {"id": "dataSource_20", "label": "NYCityMap Full", "type": "WEB_MAP", "itemId": "<portal-item-id>"},
+      {"id": "dataSource_21", "label": "NYCityMap Map Explorer", "type": "WEB_MAP", "itemId": "<portal-item-id>"}
+    ],
+    "strings": [
+      "NYCityMap - Holistic testing",
+      "Lot Info",
+      "Map Explorer",
+      "Ask AI",
+      "High-Value Tax Lots",
+      "Find Nearby Libraries"
+    ]
+  },
+  "suite": {
+    "cases": [
+      {
+        "id": "map-explorer-near-me",
+        "title": "Map Explorer and Near Me",
+        "pageId": "page_1",
+        "pageTitle": "Map Explorer",
+        "pageUrl": "https://experiencedev.arcgis.com/experience/<app-id>/page/Map-Explorer",
+        "turns": [
+          "What information is available on this Map Explorer page?",
+          "Which nearby facility categories can I search around a location?",
+          "Focus on firehouses. What location detail would you need before searching?"
+        ],
+        "tags": ["multi-page", "multi-turn", "map", "near-me"]
+      }
+    ]
+  }
+}

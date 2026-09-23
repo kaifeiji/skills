@@ -4,19 +4,28 @@
 
 Use a real app as an AI Chat testing target, generate a prompt suite from app context, run a visible Playwright validation, analyze the evidence, and publish a report.
 
-This workflow is self-contained in this skill bundle. It runs against the target app and writes evidence to the chosen output root.
+This workflow is self-contained in this skill bundle. It runs against the target app and writes evidence to the chosen output root. Resolve `<skill-root>` as the parent of the absolute `SKILL.md` path supplied in the active skill listing; all scripts are invoked from `<skill-root>/tooling/`.
+
+The workspace is not a harness source. If the skill listing lacks an absolute path, stop and report an invalid installation. Never search the workspace, home directory, or drive for the scripts; they are not target-app files and must not be copied into the target app.
 
 ## Input
 
 Confirm the following in plain language:
 
 - App URL
-- Preferred language (default: English; supported values: English and Chinese)
+- Output language: explicitly choose English (`en`) or Chinese (`zh`)
 - Whether to show the browser window (default: visible)
+- Viewport choice: `desktop` (`1920x1080`), `pad` (`1024x1366`), or `mobile` (`390x844`)
 - Result output location (default: `artifacts`)
 - Test focus (optional)
 
 Optional: the user may provide a test focus or concern area. Apply that lens during prompt generation and analysis; otherwise use the default prompt-generation rules and coverage template.
+
+Use the host's interactive question UI to ask for language, question source, and viewport together before running the session probe. Label the question-source choices `Auto-generate test questions` / `I will provide test questions`, or `自动生成测试问题` / `我提供测试问题` in Chinese. Keep the workflow pending until the user submits the choices. When no interactive UI is available, ask the same choices in chat and wait for the reply.
+
+## User-facing progress
+
+Report only the active phase using the fixed short forms in `SKILL.md`: session check, context collection, case preparation, test execution, or analysis. Use a second sentence only for a required user action. Report paths only when an artifact is ready.
 
 ## App slug naming
 
@@ -29,7 +38,7 @@ Read the app title from the loaded page and convert it to a lowercase kebab-case
 
 Use lowercase letters and hyphens in the slug; omit spaces, underscores, and other punctuation.
 
-The slug is generated from the page title and matches the config filename, run folder name, and artifact naming.
+The slug is generated from the page title and matches the default config filename and run folder name. When the default config name already exists, append `-02`, `-03`, and so on; the resolved slug is stored in config and used in the run folder.
 
 ## Environment preparation
 
@@ -55,21 +64,17 @@ If the app requires a visible browser session, make sure the machine has a worki
 
 ## Step 1: Verify Node Playwright, then open the dedicated session
 
-Before running, confirm the App URL and preferred language. If the user does not specify otherwise, use English, show the browser window, and save results under `artifacts`.
+Before running, confirm the App URL and the user's explicit language and viewport choices. Show the browser window and save results under `artifacts` unless the user changes those defaults.
 
 Use the visible Node Playwright browser by default. Do not open a VS Code browser tab for app inspection.
 
-For an authenticated app, capture the shared state with the bundled helper:
+Probe the shared browser profile before collecting context or running cases:
 
 ```bash
-node tooling/capture-session.mjs https://<app-url> config/.auth/local-exb.json
+node "<skill-root>/tooling/probe-session.mjs" https://<app-url>
 ```
 
-Complete sign-in in the Playwright Chromium window opened by this command. The browser stays open during sign-in; type `READY` in the terminal only after the app is fully loaded. The helper saves the authenticated browser state through a temporary file, so a failed capture does not replace the saved state.
-
-When `config/.auth/local-exb.json` already exists, the helper loads it into the new Chromium context first and refreshes that same state file after successful verification.
-
-The helper waits for network idle before presenting the READY prompt and again after sign-in. AI Chat and blocking modal checks happen only in `run-cases.mjs` immediately before turn execution.
+The browser-profile directory is storage, not proof of authentication. The probe validates `window._sessionManager.getMainSession()` against the supplied app URL. A valid session proceeds immediately. If the session is absent or `isMainSessionExpired()` reports expiration, the probe opens the app site's root URL in headed Playwright Chromium. Complete sign-in within two minutes; the probe reads `_sessionManager` every three seconds without reloading the page and continues automatically when authentication succeeds. Context collection and the runner validate the session again; if either reports `signed-out` or `expired`, run the probe again before continuing.
 
 Then:
 
@@ -80,33 +85,39 @@ Then:
 
 If the app is not reachable or the session cannot be established, stop.
 
+Before asking for case or turn planning, ask whether the user has custom questions:
+
+- **Yes:** collect the ordered questions, select the target visible page, and create exactly one case whose turns are those questions.
+- **No:** let the Agent generate cases and turns from the accessible visible pages in `appContext.pages`.
+
+Do not combine custom questions with automatically generated page cases unless the user explicitly requests that.
+
 The remaining values—slug, run name, auth handling, config generation, report generation—should follow the default rules instead of being re-asked.
 
-## Step 2: Agent prepares config and prompt suite from the shared session
+## Step 2: Agent collects context and prepares config from the shared session
 
-Open the app in Chromium, read `document.title`, generate the slug, then create or update `config/<app-slug>.json` and generate the prompt suite in the same step.
+Open the app in Chromium, read `document.title`, generate a unique slug, then create `config/<app-slug>.json`. The script collects context only; the Agent authors and reviews the prompt suite afterward.
 
 The bundled preparation command accepts the app URL and derives the slug automatically:
 
 ```bash
-node tooling/prepare-config-and-prompts.mjs \
-	https://<app-url> config/<app-slug>.json \
-	--storage-state config/.auth/local-exb.json
+node "<skill-root>/tooling/prepare-app-context.mjs" \
+	https://<app-url>
 ```
 
-With the default `config/.auth/local-exb.json` location, the explicit `--storage-state` argument can be omitted.
-
-Use the slug consistently in the config filename and in the final run folder name.
+Use the resolved slug consistently in the config filename and final run folder name. If `config/<base-slug>.json` exists, the helper writes `config/<base-slug>-02.json` instead of replacing it.
 
 The file should contain:
 
 - app URL
 - startup settings
 - app-specific context notes
-- realistic multi-turn prompt cases
+- an empty `suite.cases` array for reviewed multi-turn prompt cases
 
-Keep the configuration focused on the app target and test suite. Its `storageState` field points to the shared Playwright session file; credentials remain in that state file.
+Keep the configuration focused on the app target and test suite. Authentication remains in the shared browser profile, not in config.
 Its `language` field records the selected output language and defaults to `en`.
+
+Do not inspect the bundled `tooling/*.mjs` files while generating cases or analyzing product behavior. Use the generated config, the reference rules, and the artifacts; inspect tooling only for an explicit harness diagnosis or implementation change.
 
 This is the Agent-to-script handoff. Before starting the runner, confirm that every case has an id, intent, turns, expected behavior, and watch-for list.
 
@@ -115,14 +126,16 @@ This is the Agent-to-script handoff. Before starting the runner, confirm that ev
 Use the bundled runner as the main evaluation path. It launches Chromium directly and drives configured turns with Playwright. There is no VS Code tab or model-operated browser step in this workflow.
 
 ```bash
-node tooling/run-cases.mjs \
-	--config config/<app>.json \
-	--output artifacts/<run-name>
+node "<skill-root>/tooling/run-cases.mjs" \
+	--config config/<app-slug>.json \
+	--mode headed
 ```
 
 Add `--case <case-id>` for a focused run.
 
-The runner waits for network idle before each case, then checks the UI. It opens Ask AI with the stable `assistant-anchor` class before language-dependent fallbacks. Config contains app, case data, and the shared `storageState` path, while locator candidates stay in the runner. Each case starts in a fresh page with the same state. Startup failures are recorded under that case and the runner continues with the next case.
+The runner performs one full load for the first case, then reuses the same browser page. Later cases call ExB's URL manager to switch pages through browser history without reloading. The Assistant thread is intentionally preserved across cases, so the suite order is one continuous conversation. It opens Ask AI with the stable `assistant-anchor` class before language-dependent fallbacks. After runtime completion, selected AI renderers must mount, clear their loading indicators, and remain stable for one second before evidence is captured. Startup failures and renderer timeouts are recorded under that case and the runner continues with the next case.
+
+The runner reuses the shared browser cache at `config/.cache/browser-profile` by default, but validates the current session through `window._sessionManager` rather than trusting the profile directory. Run `probe-session.mjs` again whenever the runner reports `signed-out` or `expired`. Use `--cache-dir <dir>` to select another profile.
 
 This should create artifacts under:
 
@@ -142,16 +155,17 @@ Validate that screenshots, result files, and debug evidence are present.
 
 The runner extracts the AssistantRuntime debug transcript from each case while it runs. Review the generated files instead of manually driving another browser session.
 
-The runtime transcript is the internal debug source for turn completion and failure analysis.
+The runtime transcript is the internal debug source for turn completion and failure analysis. Context collection uses static `window._am().appConfig`; it intentionally does not persist `_dataSourceManager` runtime objects.
 
 The runtime transcript should be captured from `window._assistantRuntime.debugTranscript`, and each case should keep:
 
 - `case-debug.md`
+- `case-debug.json`
 - screenshots for each turn
 - `result.json`
 - any runtime signal showing `completed` / `failed` state
 
-Review the detailed per-turn transcript in `case-debug.md`, including message metadata and each debug entry's section, title, timestamp, and content. A `timeout` means a transcript was present without a recognized terminal status; `runtime-unavailable` means the page exposed the runtime object but no transcript. These states are recorded as evidence gaps, not successful turns.
+Review the readable per-turn transcript in `case-debug.md`; use `case-debug.json` when the summarized evidence is insufficient and the captured AssistantRuntime business-state snapshots or `rendererWait` evidence need inspection. It intentionally excludes runtime dependencies, compiled graphs, promises, functions, and portal objects. Runtime and renderer completion share a 120-second turn watchdog; `runtime-unavailable` means the page exposed the runtime object but no usable state. Treat any externally interrupted run as an evidence gap, not a successful turn.
 
 If `window._assistantRuntime` is unavailable after a case has actually run, record that fact in that case's debug evidence. Create `case-debug.md` after the case has executed.
 
@@ -159,7 +173,7 @@ If `window._assistantRuntime` is unavailable after a case has actually run, reco
 
 After the run has produced real artifacts, write `analysis.md` under `artifacts/<run-name>/`. Keep it focused on turn-by-turn evidence, findings, and impact.
 
-The analysis should be written in the selected language and explain:
+Load [analysis-report-rules.md](./references/analysis-report-rules.md) before writing. The analysis should be written in the selected language and explain:
 
 - user goal
 - starting app state
@@ -169,7 +183,7 @@ The analysis should be written in the selected language and explain:
 - evidence used
 - user-visible impact
 
-Write one block for every turn. English blocks use `User Prompt`, `Agent Response`, `Status`, and `Conclusion`; Chinese blocks use `用户提问`, `Agent 回答`, `状态`, and `结论`. Include the measured turn duration in the status line. Judge the prompt and response first. A successful conclusion is one short sentence. For failures, use `case-debug.md` and the matching turn screenshot only as supporting evidence when the conversation does not establish the cause.
+Write one concise block for every turn using the exact headings, status rules, and evidence order in `analysis-report-rules.md`. Judge the visible prompt and response first; use `case-debug.md` and the matching screenshot only when they establish a material cause.
 
 ## Completion condition
 

@@ -2,25 +2,87 @@
   "slug": "<generated-from-app-title>",
   "url": "https://<app-url>",
   "language": "en",
-  "storageState": "config/.auth/local-exb.json",
   "startup": {
-    "openChat": true,
-    "viewport": "desktop-large",
-    "requireVisibleChat": true
+    "viewport": "desktop"
   },
   "appContext": {
-    "pages": [],
-    "dataSources": [],
-    "accessCheck": "Verify each page in the dedicated Playwright session before generating its case."
+    "app": {
+      "title": "<app-title>"
+    },
+    "header": {
+      "widgets": []
+    },
+    "footer": {
+      "widgets": []
+    },
+    "dialogs": [
+      {
+        "id": "<dialog-id>",
+        "label": "<dialog-label>",
+        "widgets": [
+          {
+            "id": "<dialog-widget-id>",
+            "label": "<dialog-widget-label>",
+            "uri": "widgets/<category>/<widget>/",
+            "widgets": []
+          }
+        ]
+      }
+    ],
+    "pages": [
+      {
+        "id": "<page-id>",
+        "title": "<page-title>",
+        "widgets": [
+          {
+            "id": "<widget-id>",
+            "label": "<widget-label>",
+            "uri": "widgets/<category>/<widget>/",
+            "useDataSources": [
+              {
+                "dataSourceId": "<data-source-id>",
+                "mainDataSourceId": "<main-data-source-id>",
+                "rootDataSourceId": "<root-data-source-id>"
+              }
+            ],
+            "useMapWidgetIds": ["<map-widget-id>"],
+            "widgets": []
+          },
+          {
+            "id": "<parent-widget-id>",
+            "label": "<parent-widget-label>",
+            "uri": "widgets/common/controller/",
+            "widgets": [
+              {
+                "id": "<child-widget-id>",
+                "label": "<child-widget-label>",
+                "uri": "widgets/common/share/"
+              }
+            ]
+          }
+        ],
+        "views": []
+      }
+    ],
+    "dataSources": [
+      {
+        "id": "<configured-data-source-id>",
+        "label": "<data-source-label>",
+        "type": "<data-source-type>",
+        "itemId": "<portal-item-id>",
+        "portalUrl": "https://www.arcgis.com"
+      }
+    ],
+    "strings": []
   },
   "suite": {
     "cases": [
       {
-        "id": "<page-id>",
-        "title": "<page-title> conversation",
+        "id": "<page-title-or-business-goal-kebab-case>",
+        "title": "<visible-page-title-or-business-goal>",
         "pageId": "<page-id>",
         "pageTitle": "<visible page title>",
-        "widgets": [],
+        "pageUrl": "https://<app-url>/page/<generated-page-title>",
         "intent": "What user goal is being tested on this page?",
         "turns": [
           "Turn 1: natural user question",
