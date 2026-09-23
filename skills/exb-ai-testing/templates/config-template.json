@@ -94,7 +94,6 @@
   },
   "suite": {
     "questionSource": "auto",
-    "turnsPerCase": 5,
     "cases": [
       {
         "id": "<page-title-or-business-goal-kebab-case>",

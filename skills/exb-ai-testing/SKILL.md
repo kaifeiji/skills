@@ -15,14 +15,15 @@ The skill bundle root is the parent directory of the absolute `SKILL.md` path su
 
 ## Human Checkpoints
 
-Before running any script, use the current host's available interactive question mechanism to present these four choices in one request:
+Before running any script, use the current host's available interactive question mechanism to present these three choices in one request:
 
 1. **Output language:** English (`en`) or Chinese (`zh`).
 2. **Questions:** use `Auto-generate test questions` / `I will provide test questions` in English, or `自动生成测试问题` / `我提供测试问题` in Chinese. Use these labels verbatim.
 3. **Viewport:** desktop (`1920x1080`), pad (`1024x1366`), or mobile (`390x844`).
-4. **Turns per auto-generated case:** choose a positive number; recommend `5` for balanced coverage. If the user provides custom questions, use exactly those questions and ignore this value for that case.
 
-Wait for the submitted answers as an active HITL checkpoint. End the current turn with the questions pending; do not mark the task blocked or complete, and do not replace the question UI with a status message. If the host has no interactive question tool, ask the same four choices directly in chat and wait for the next user response. If user-provided questions are selected, set `suite.questionSource` to `custom`, collect the questions in a follow-up question, and use their exact count and order; do not generate additional page cases or pad the case. Otherwise, set `suite.questionSource` to `auto`, write the approved positive number to `suite.turnsPerCase`, and generate exactly that many turns for every auto-generated case. Defaults that need no question are: mode `headed`, output root `artifacts`, balanced prompt coverage, and `5` turns per auto-generated case.
+The Turn Generation Protocol determines the turns for auto-generated cases. Custom questions determine their own wording, order, and count.
+
+Wait for the submitted answers as an active HITL checkpoint. End the current turn with the questions pending; do not mark the task blocked or complete, and do not replace the question UI with a status message. If the host has no interactive question tool, ask the same three choices directly in chat and wait for the next user response. If user-provided questions are selected, set `suite.questionSource` to `custom`, collect the questions in a follow-up question, and use their exact count and order; do not generate additional page cases or pad the case. Otherwise, set `suite.questionSource` to `auto` and generate turns according to the Turn Generation Protocol in `prompt-generation-rules.md`. Defaults that need no question are: mode `headed`, output root `artifacts`, and balanced prompt coverage.
 
 Pause for confirmation before changing dependencies or installing Chromium, after cases are prepared and before execution, and whenever a dialog requires consent, authorization, data access, or another consequential action. Show the user the URL, language, mode, output directory, focus, case IDs, and turn count before the run. Do not automatically accept consequential dialogs. The user may type credentials in the Playwright window; never request or record them in chat or artifacts.
 
@@ -64,91 +65,10 @@ npx playwright install chromium
 
 ## Workflow
 
-### 1. Probe the shared session
+1. **Probe the shared session** and confirm the app is accessible with a valid browser session.
+2. **Collect app context** from the visible page state, reachable widgets, data sources, and fields.
+3. **Author and review cases** using the Turn Generation Protocol and the referenced generation rules, with custom questions treated as an explicit exception.
+4. **Execute the reviewed cases** in a single continuous conversation flow and preserve app state across turns.
+5. **Analyze the evidence** against user-visible behavior, then publish the final report with the required artifacts and status classification.
 
-```bash
-node "<skill-root>/tooling/probe-session.mjs" <app-url>
-```
-
-The browser-profile directory only stores browser state; its existence does not prove that authentication is valid. When a profile exists, the probe opens the real app URL headlessly and uses `window._sessionManager.getMainSession()` to validate it. Because `getMainSession()` filters expired sessions, a valid result returns without showing a browser. For a missing, signed-out, or expired session, the probe derives and opens the site root URL in headed Chromium for sign-in. It reads `_sessionManager` from that page every three seconds without reloading it, continues automatically when a valid session appears, and fails after two minutes. If context collection or execution later reports `signed-out` or `expired`, run the probe again before continuing.
-
-### 2. Collect context
-
-```bash
-node "<skill-root>/tooling/prepare-app-context.mjs" \
-	<app-url> \
-	--language <en|zh>
-```
-
-The script reads `document.title`, creates a stable lowercase kebab-case slug, and extracts page, view, mounted-widget, and visible-string context from `window._am().appConfig` through the shared profile at the selected viewport. It asks `_dataSourceManager` to create every configured root data source, waits for child data sources, and serializes each referenced root's available layers and schema fields. Runtime instances remain in the page; config stores only plain IDs, labels, types, field metadata, and bounded load warnings. It writes `config/<app-slug>-NN.json`, starting at `-01` and incrementing when needed. If the app context is empty, rerun the probe and stop rather than fabricating cases.
-
-### 3. Author and review cases
-
-Use [prompt-generator-template.md](./templates/prompt-generator-template.md) as the required JSON/config contract. Before authoring, load [prompt-generation-rules.md](./references/prompt-generation-rules.md) for risk selection and case-quality checks; load [prompt-scenario-guide.md](./references/prompt-scenario-guide.md) only when choosing a concrete app-grounded scenario or `watchFor` signal. If custom questions were supplied, create exactly one case using them as its ordered turns. Otherwise, create one case for each relevant accessible page, not for tabs, views, or URL variants. Omit inaccessible, empty, permission-restricted, and AI-irrelevant pages.
-
-
-Each case requires unique `id`, `title`, `pageId`, `pageTitle`, canonical `pageUrl`, one-sentence `intent`, exactly the approved positive number of turns, `expectedBehavior`, a non-empty `watchFor`, and useful `tags`. Use the visible page title for `title` by default; use a concise business goal when that better distinguishes the conversation. Derive `id` from that human-readable name as lowercase ASCII kebab-case, while preserving the real internal page ID in `pageId`. During case authoring, derive `pageUrl` from the full config URL with the URL API, preserving its origin, query parameters, and hash while changing only the page pathname; the runner navigates to this exact case URL. Keep widget context in `appContext`. At least 80% of turns must target evidenced app data or capabilities; for data-bearing cases, include at least two business tasks such as query, count, aggregate, summary, comparison, ranking, or analysis when supported, then distribute remaining turns across other evidenced capabilities such as map state, navigation/action, renderer, ambiguity, continuation, and recovery. Reserve at most one missing-data or unsupported-capability turn across the suite unless the user requests boundary-focused coverage. Every generated turn speaks as a user performing the real task now. Cover challenge behavior primarily through current map state, data-source ambiguity, correction/follow-up, presentation or renderer behavior, continuation across turns, and capability choice. Bias toward the user's focus. Prompts must be natural, grounded in visible capabilities and real data sources, and written in the selected language.
-For cases that have a concrete visible outcome, optionally add a `verification` object with one to three `visibleChecks` and one to three `failureSignals`. Treat these as a lightweight review contract: the runner records evidence but does not yet fail a run from them, and checks must describe observable outcomes rather than exact wording or guessed values. Use `expectedBehavior` and `watchFor` when no stable visible check exists.
-
-Before execution, validate required fields, that every auto-generated case has exactly `suite.turnsPerCase` turns, accessible page references, at least one case, and any optional `verification` checks against the collected context. Write reviewed cases to `config/<app-slug>-NN.json`, show the review summary, and wait for approval.
-
-### 4. Execute
-
-```bash
-node "<skill-root>/tooling/run-cases.mjs" \
-	--config config/<app-slug>-NN.json \
-	--mode headed
-```
-
-Use `--mode headless` only when selected, and `--case <case-id>` for a focused rerun. Without `--output`, the runner writes `artifacts/<YYYYMMDD>-<config-filename-stem>-<run-sequence>`; for example, `config/<app-slug>-03.json` produces `artifacts/20260923-<app-slug>-03-01`, then `...-03-02` if needed. Config files generated by the helper always use `-01`, `-02`, `-03` sequence suffixes. It reuses the shared browser cache at `.cache/browser-profile` in the repository root. The first case loads its `pageUrl`; later cases call `window._urlManager.changePage(pageId)` so ExB performs a history-based SPA transition. Do not start a new chat or reset AssistantRuntime between cases: case order is one continuous conversation, and later cases inherit earlier messages. Each case validates `window._sessionManager.getMainSession()`, then performs startup-dialog, assistant-panel, and input-readiness checks. After runtime completion, a turn with an AI renderer remains active until its new renderer UI has mounted, all Jimu loading indicators inside it are gone, and its DOM is stable for one second. Renderer waiting shares the 120-second turn watchdog; timeout is a failed turn and is recorded in `case-debug.json`. For a consequential dialog, ask the user to handle it and rerun. For valid session plus unavailable Chat, report the harness/app limitation and stop.
-
-### 5. Analyze evidence
-
-Before writing the report, load [analysis-report-rules.md](./references/analysis-report-rules.md); it is the authoritative evidence order and report-format contract. Start with `summary.json`, each case's `result.json`, and `case-debug.md`. Always embed each turn's screenshot link in `analysis.md`; only inspect turn screenshots or `case-debug.json` when Markdown is missing, ambiguous, contradictory, or insufficient to establish a user-visible result or cause.
-
-When a case has `verification`, evaluate each check against visible evidence and record only the resulting user-facing status. Do not present the review contract as an automated assertion or infer a pass from runner completion.
-
-Interpret statuses as follows: `completed` means a terminal runtime signal was observed and any selected renderer finished its UI completion gate; `failed` means runner/runtime/renderer failure; `runtime-unavailable` means the runtime or transcript was unavailable after a real turn. The runner waits indefinitely for network idle before the first turn and uses one 120-second watchdog for runtime and renderer completion. Do not call a turn successful solely because the runner finished. Judge the visible response first and distinguish observed facts from inference.
-
-Write `artifacts/<run-name>/analysis.md` in the selected language, using the exact headings, turn fields, evidence budget, and status rules in `analysis-report-rules.md`. Include measured duration, goal, expected behavior, observed behavior, failure stage, evidence, and user-visible impact. A successful turn gets one short conclusion sentence; failed or inconclusive turns state the likely cause and evidence gap.
-
-## Artifact Contract
-
-```text
-config/<app-slug>-NN.json
-artifacts/<run-name>/
-	run-config.json
-	summary.json          # run index
-	<case-id>/
-		result.json       # turn index
-		case-debug.md
-		case-debug.json   # AssistantRuntime business-state snapshots
-		turn-01.png
-		turn-02.png
-		...
-	analysis.md
-```
-
-Startup or preflight failures may additionally produce `preflight-error.json`, `startup-error.png`, or a case `result.json` marked `handoffFailure`. Preserve and report them; do not write a success report over them. The authenticated state is sensitive local data and must not be pasted into chat or committed.
-
-## Completion Checklist
-
-- URL and shared browser session verified.
-- Config contains language, URL, app context, and reviewed cases.
-- Every executed case has required metadata and the approved turn count.
-- `summary.json` accounts for all intended cases.
-- Each case has `result.json`, `case-debug.md`, `case-debug.json`, and screenshots or an explicit startup failure artifact.
-- Run-root `analysis.md` uses the selected language and required labels, covers every turn, and distinguishes evidence from inference.
-- Timeouts, runtime gaps, harness limitations, inaccessible pages, and failures are visible in the report.
-
-## References
-
-- [HUMAN-SOP.md](./HUMAN-SOP.md): operator walkthrough
-- [README.md](./README.md): installation and development loop
-- [config-template.json](./templates/config-template.json): config shape
-- [prompt-generator-template.md](./templates/prompt-generator-template.md): case rules
-- [references/README.md](./references/README.md): phase-based reference index
-- [probe-session.mjs](./tooling/probe-session.mjs): shared session probe
-- [prepare-app-context.mjs](./tooling/prepare-app-context.mjs): context collection
-- [run-cases.mjs](./tooling/run-cases.mjs): execution and evidence
-- [viewport-utils.mjs](./tooling/viewport-utils.mjs): desktop/pad/mobile presets
+This is the high-level flow. The detailed generation and review rules remain in the reference files, and the approval gates remain in the human checkpoints.

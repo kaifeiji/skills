@@ -34,7 +34,7 @@ The local command refreshes the installed skill; it does not install the target 
 
 ## Usage
 
-Use the skill with the App URL. Before execution it asks the user to choose English or Chinese, a viewport, and the number of turns per auto-generated case (`5` recommended). If the user supplies custom questions, their exact count and order are used instead. It shows the browser window by default and saves results under `artifacts`. A test focus and alternate save location are optional. Browser execution mode remains internal.
+Use the skill with the App URL. Before execution it asks the user to choose English or Chinese, a viewport, and whether to auto-generate questions or provide custom questions. Auto-generated turns follow page capabilities; custom questions retain their exact wording, count, and order. It shows the browser window by default and saves results under `artifacts`. A test focus and alternate save location are optional. Browser execution mode remains internal.
 
 The first step is to check Node.js, `@playwright/test`, and Playwright Chromium. Do not open the app in the VS Code browser. If `@playwright/test` or Chromium is missing, ask the user before installing it. The app must be opened by the bundled Node Playwright scripts.
 

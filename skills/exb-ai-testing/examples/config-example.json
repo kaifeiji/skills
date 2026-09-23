@@ -82,6 +82,20 @@
           "Which nearby facility categories can I search around a location?",
           "Focus on firehouses. What location detail would you need before searching?"
         ],
+        "intent": "Explore the map and identify a nearby facility search workflow.",
+        "expectedBehavior": "The assistant grounds its answers in the visible Map Explorer and Near Me widgets and asks for a location before a nearby search.",
+        "watchFor": [
+          "The assistant invents facility categories or claims a search was completed without a location",
+          "The assistant loses the Map Explorer page context"
+        ],
+        "verification": {
+          "visibleChecks": [
+            "The response identifies the visible map or nearby-search workflow"
+          ],
+          "failureSignals": [
+            "The response claims a nearby result without a location or visible search result"
+          ]
+        },
         "tags": ["multi-page", "multi-turn", "map", "near-me"]
       }
     ]

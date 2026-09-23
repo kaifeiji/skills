@@ -1,68 +1,21 @@
 # Analysis Report Rules
 
-You are reviewing automated AI Chat e2e artifacts as a human usability tester and product-minded engineer.
+Return Markdown only. Use the selected output language consistently across the whole report.
 
-Your job is to read one Playwright run output folder and produce a concise Markdown findings report. Do not modify the artifacts. Do not assume the app behaved correctly just because a turn completed.
+## Inputs
 
-## Inputs To Review
-
-The tester will provide some or all of:
-
-- prompt suite JSON
-- run summary JSON
-- per-case result JSON
-- screenshots
-- copied debug transcript text
-- Playwright traces, console output, or errors
-- app URL and starting state
-- relevant manual findings from `artifacts/manual/**`
-
-If the prompt suite contains a `judgmentProfile`, treat it as the controlling app-specific evaluation contract. Do not apply another app's success or failure criteria.
-
-If evidence is missing, call out only the missing user-facing product evidence. Do not report missing test-harness artifacts or test-runner behavior as a product finding.
-
-## Output Language
-
-Use the configured run language. For `en`, use these exact field labels: `Test Scope`, `User Prompt`, `Answer Summary`, `Duration`, `Status`, `Judgment`, and `Key Debug`. For `zh`, use: `测试范围`, `用户 Prompt`, `回答摘要`, `耗时`, `状态`, `判断`, and `关键 Debug`.
-
-Prefix every status value with its icon: `✅ Success` / `✅ 成功`, `⚠️ Partial Success` / `⚠️ 部分成功`, `❌ Failure` / `❌ 失败`, or `🚨 Error` / `🚨 错误`.
-
-## Evidence Order
-
-Start with `case-debug.md`. If it contains a prompt, usable Agent Response, relevant plan/action evidence, and no visible contradiction, it is sufficient for a concise text-only finding.
-
-Open the turn screenshot whenever `case-debug.md` reports a renderer UI, the prompt requests a table/chart/list/map or another visual presentation, visible app state matters, the response is marked missing, Markdown is ambiguous, or debug text conflicts with expected behavior. Renderer output is user-visible evidence and cannot be judged from Agent Response text alone. Use `case-debug.json` only when Markdown cannot explain the cause and raw business-state evidence is needed.
-
-The final `analysis.md` must still include the clickable turn screenshot for every turn, even when the agent did not open or inspect that image during analysis. The image link is report evidence for the reader, not a requirement to feed every screenshot into the agent's analysis context.
-
-When supplemental evidence is needed, use this order:
-
-1. Inspect the screenshot for the visible final answer, counts, renderer, loading/empty state, error, and page context.
-2. Use `result.json` for prompt, timing, and screenshot filenames; do not reconstruct answers from page chrome or stale turns.
-3. Use `case-debug.json` to explain state, plan, steps, messages, data-source context, or action details that Markdown does not expose.
-4. If sources disagree, report the disagreement and classify the user-visible state from the screenshot.
-5. Before calling a response missing, search supplemental screenshot evidence for the requested answer.
-
-For every turn, embed the actual screenshot link and state whether the requested result is visibly present, partial, or absent only when the screenshot was inspected. Read the filename from `result.json` at `turns[].screenshot`, resolve it from the run-root `analysis.md` as `./<case-id>/<screenshot>`, and verify that file exists before writing the report. Use a clickable image reference:
-
-```markdown
-[![Turn 1 screenshot](./<case-id>/turn-01.png)](./<case-id>/turn-01.png)
-```
-
-If a screenshot was needed but not emitted, state the evidence gap. Do not substitute a plain-text path, invent a link, or write a user-visible finding from `result.json` alone.
-
-Do not omit the prompt or answer summary even when the turn failed. Do not use timing labels, lifecycle status, or raw internal renderer text as the answer summary.
+Use the artifacts available for the executed run. When the run summary filename is needed, use `summary.json`.
 
 ## Debug Evidence Budget
 
-Do not narrate the debug transcript. Use at most one short debug excerpt per finding, and only when it proves a material product fact that the screenshot cannot prove by itself, such as:
+Keep the debug narrative short. Use at most one short debug excerpt per finding, and only when it proves a material product fact the screenshot cannot prove by itself, such as:
 
 - the selected data source or field;
 - a concrete action error;
 - a renderer field/record configuration that conflicts with the visible result;
 - a 403, timeout, 429, or missing-field limitation.
 
-Do not quote or summarize routine lifecycle lines such as `Status: completed`, `Completed.`, `Thinking`, `Working`, `Renderer emitted`, generic query-step labels, or repeated prompt/system metadata. These are not findings. If the screenshot already proves the issue, omit debug evidence entirely.
+Routine lifecycle lines such as `Status: completed`, `Completed.`, `Thinking`, `Working`, `Renderer emitted`, generic query-step labels, and repeated prompt/system metadata belong outside the findings. When the screenshot already proves the issue, rely on the screenshot.
 
 ## Causal Confidence
 
@@ -73,45 +26,100 @@ Separate what the user can see from why it happened:
 - **Hypothesis:** a plausible explanation without confirming evidence; label it as uncertain.
 - **Unknown:** the artifacts do not establish a cause; state the evidence gap instead of assigning blame.
 
-Use `verification.visibleChecks` and `verification.failureSignals` as a lightweight review contract when present. They guide classification but are not automated assertions. A runner completion signal never substitutes for a visible check. Add `Key Debug` only for a supported cause or a concrete error; do not turn a hypothesis into a definitive product finding.
+Use `verification.visibleChecks` and `verification.failureSignals` as a lightweight review contract when present. They guide classification and remain non-automated. A runner completion signal supplements, and a visible check remains the primary signal. Add `Key Debug` for a supported cause or a concrete error; label hypotheses as uncertain.
 
 ## Report Structure
 
-Return `Test Scope` / `测试范围`, followed by one case section per executed case. Do not add a `Turn-by-turn` / `Turn-by-turn` wrapper section.
+Return `Test Scope`, followed by one case section per executed case.
 
-Each case section should use the case title as an `##` heading. Put its turns directly beneath that heading as `### Turn N: <short title>`.
+Each case section uses the case title as an `##` heading. Put its turns directly beneath that heading as `### Turn N: <short title>`.
 
-`Test Scope` must start with four concise bullets:
+`Test Scope` starts with four concise bullets:
 
-- `App Title` / `应用标题`: the title recorded for the tested app.
-- `App URL` / `应用 URL`: the canonical tested URL.
-- `Result Summary` / `结果摘要`: case and turn totals plus a short status breakdown.
-- `Scope` / `范围`: tested pages, workflows, and evidence boundaries.
+- `App Title`: the title recorded for the tested app.
+- `App URL`: the canonical tested URL.
+- `Result Summary`: case and turn totals plus a short status breakdown.
+- `Scope`: tested pages, workflows, and evidence boundaries.
 
-Every turn must contain, in this order, using only the selected-language labels:
+Every turn contains, in this order, using only the selected-language labels:
 
 1. the embedded, clickable screenshot and visible-state observation;
-2. `Status` for `en` or `状态` for `zh`, using the required icon;
-3. `User Prompt` for `en` or `用户 Prompt` for `zh`;
-4. `Answer Summary` for `en` or `回答摘要` for `zh`, based on visible pixels, with debug Final assistant message only as support;
-5. `Duration` for `en` or `耗时` for `zh`;
+2. `Status`, using the required icon;
+3. `User Prompt`;
+4. `Answer Summary`, based on visible pixels, with the debug Final assistant message as support;
+5. `Duration`;
 6. the judgment and user impact;
-7. one `Key Debug` for `en` or `关键 Debug` for `zh` only when the status is non-success and the line proves the cause.
+7. one `Key Debug` when the status is non-success and the line proves the cause.
 
-Status rules:
+## Turn Generation Protocol Reference
 
-- `✅ Success` / `✅ 成功`: the requested user goal is substantially visible; keep the evaluation brief and do not add routine debug. A verified zero-match result is a complete query result, not an incomplete answer. Classify an explicit no-data/unsupported response as success when the case expects transparent missing-data handling and supplemental evidence confirms that the intended app data source returned no matching records or lacks the requested field/capability. Use that evidence for classification without adding routine debug to a successful report.
-- `⚠️ Partial Success` / `⚠️ 部分成功`: some answer/result is visible but a field, renderer, action, page state, or context is incomplete; analyze the gap.
-- `❌ Failure` / `❌ 失败`: the user goal was not completed without a concrete system exception; explain the broken chain.
-- `🚨 Error` / `🚨 错误`: a concrete action error, data-source error, 403, 429, timeout, or other exception blocked the result; explain the error chain.
+The Turn Generation Protocol defined in the prompt-generation rules is the single source of truth for turn composition. Use it as the expected shape for every auto-generated case.
 
-Do not treat an unsupported claim of “no data” as success. If the intended source was not queried, the wrong source was used, or the query failed, classify the observable gap or error instead.
+Expected turn types, in priority order:
+
+1. **Page Overview / Capability / How-to (required)**  
+   One turn about the current page's purpose, visible features, available widgets, or how to perform a task on this page.
+
+2. **Query (when the page has a usable data source)**  
+   Find records by place, condition, time, status, or user-provided value.
+
+3. **Filter / Rank (when the page has a usable data source)**  
+   Narrow, sort, or rank records by an evidenced field or condition.
+
+4. **Statistics (when the page has a usable data source)**  
+   Count, sum, average, min, max, or another supported aggregate.
+
+5. **Functional Widget Action (when the page has reachable actionable widgets)**  
+   One action turn per selected functional widget, up to 5 action turns.
+
+Custom questions are an explicit exception. When custom questions are supplied, the supplied questions and their order define the expected turns.
+
+## Turn Classification
+
+Classify each turn against its intended type:
+
+- Page Overview / Capability / How-to
+- Query
+- Filter / Rank
+- Statistics
+- Functional Widget Action
+- Custom Question (when custom questions are supplied)
+
+When a turn does not fit its intended type, report the mismatch as a finding when it affects the user-visible result or the case's ability to test the intended behavior.
+
+## Protocol Consistency
+
+Check whether the generated case follows the Turn Generation Protocol:
+
+- Is the required page overview turn present?
+- Are query, filter/rank, and statistics turns present when the page supports them?
+- Are query, filter/rank, and statistics turns distinct in user goal and query dimension?
+- Were any task types added only to satisfy a count, rather than because the page supports them?
+- Is the widget action turn limited to reachable functional widgets and at most 5?
+- Does the turn set reflect the page capabilities identified by the protocol?
+- Are custom questions used exactly as supplied, without added or rewritten turns?
+
+Report protocol mismatches as findings when they affect the user-visible result or the case's ability to test the intended behavior.
+
+## Status Rules
+
+- `✅ Success`: the requested user goal is substantially visible; keep the evaluation brief. A verified zero-match result counts as a complete query result.
+- `⚠️ Partial Success`: some answer/result is visible but a field, renderer, action, page state, or context is incomplete; analyze the gap.
+- `❌ Failure`: the user goal was not completed without a concrete system exception; explain the broken chain.
+- `🚨 Error`: a concrete action error, data-source error, 403, 429, timeout, or other exception blocked the result; explain the error chain.
+
+A missing-data or unsupported-capability turn counts as success when:
+
+- the case expects transparent missing-data handling; and
+- supplemental evidence confirms that the intended app data source returned no matching records or lacks the requested field or capability.
+
+When the intended source was not queried, the wrong source was used, or the query failed, classify the observable gap or error instead.
 
 ## Writing Style
 
-Write for scanning. Keep `Answer Summary` and `Judgment` to one short sentence each. Lead with the visible result and user impact; omit repeated goal, routine lifecycle detail, and background explanation. Add `Key Debug` only when it establishes the cause of a non-success status.
+Write for scanning. Keep `Answer Summary` and `Judgment` to one short sentence each. Lead with the visible result and user impact; omit repeated goal, routine lifecycle detail, and background explanation. Add `Key Debug` when it establishes the cause of a non-success status.
 
-Do not add standalone performance analysis, classification summaries, priority/fix-order sections, execution-chain diagrams, or cross-case repetition. Mention latency only in the relevant turn when it affects that turn's user-visible experience.
+Keep performance analysis inside the relevant turn when latency affects that turn's user-visible experience. Keep the report focused on per-case and per-turn findings.
 
 ## Review Perspective
 
@@ -120,7 +128,7 @@ Use a human tester perspective. Look for:
 - Did the assistant understand what a normal user meant?
 - Did it choose app data/actions over generic web/geocoding when app data existed?
 - Did it use the current page, map, table, visible layer, selection, extent, or open widget correctly?
-- Did it mutate the app only when the user wanted mutation?
+- Did it mutate the app when the user wanted mutation?
 - Did it act in the right order, especially for widgets inside controllers or hidden panels?
 - Did it provide natural, honest, non-internal wording?
 - Did it overclaim success after partial or failed work?
@@ -143,9 +151,9 @@ Classify failures by stage:
 
 ## Output Format
 
-Return Markdown only.
+The English example below is shown in English. For a Chinese report, replace every heading and field label with its exact Chinese counterpart and keep the whole report in Chinese.
 
-Use this structure:
+### English Example
 
 ```markdown
 # Run Analysis: <suite or app name>
@@ -168,15 +176,4 @@ Use this structure:
 - **Answer Summary:** ...
 - **Duration:** ...
 - **Judgment:** ...
-- **Key Debug:** ... (only for a non-success status and only when causally useful)
-```
-
-For `zh`, replace every heading and field in the example with its exact Chinese label from `Output Language`; do not mix languages in one report.
-
-## Rules
-
-- Ground every finding in evidence from the artifacts.
-- Prefer user-visible impact over internal blame.
-- Do not recommend changing manual artifacts.
-- Do not include Playwright, runner, collector, session, screenshot, report-generation, or other test-harness defects in findings. The report evaluates only ExB AI Chat's user-facing behavior, Agent reasoning/actions, data grounding, renderer output, app state, and performance.
-- If a result is ambiguous, say what evidence would disambiguate it.
+- **Key Debug:** ... (for a non-success status when causally useful)

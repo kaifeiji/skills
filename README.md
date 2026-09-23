@@ -7,67 +7,30 @@ Personal agent skill catalog. Each installable skill lives under `skills/<skill-
 Install one skill into the current project:
 
 ```bash
-npx skills add https://github.com/kaifeiji/skills --skill exb-ai-testing
+npx skills add https://github.com/kaifeiji/skills --skill <skill-name>
 ```
 
 Install globally for the detected agent profile:
 
 ```bash
-npx skills add https://github.com/kaifeiji/skills --skill exb-ai-testing --global
+npx skills add https://github.com/kaifeiji/skills --skill <skill-name> --global
 ```
-
-For non-interactive installs, add `--yes`. To copy files instead of creating symlinks, add `--copy`.
 
 ## Local skill development
 
-Install this repository as a global skill once for continued local development. The default installation mode is a symlink, so later changes in this directory are immediately visible to the agent without pulling from the remote repository again:
+Install this repository as a global skill for continued local development:
 
 ```bash
-npx skills add ./ --skill exb-ai-testing --global --yes
-```
-
-If you previously used `--copy`, switch back to a symlink first:
-
-```bash
-npx skills remove exb-ai-testing --global --yes
-npx skills add ./ --skill exb-ai-testing --global --yes
+npx skills add ./ --skill <skill-name> --global --yes
 ```
 
 Development loop:
 
-1. Modify `skills/exb-ai-testing/SKILL.md`, the templates, or `tooling/`.
-2. Start a new agent/chat session so it reloads the skill.
-3. Run the skill with a real app URL and inspect the generated case artifacts and debug files.
-4. Run `npx skills list --global --json` to confirm the installation source. Do not run `skills update`, because it replaces the local development version with the remote version.
-
-For structural checks only, run the following from the repository root:
-
-```bash
-npx skills add ./ --skill exb-ai-testing --list
-node --check skills/exb-ai-testing/tooling/run-cases.mjs
-```
+1. Modify `skills/<skill-name>/SKILL.md`, the templates, or `tooling/`.
+2. Run `npx skills add ./ --skill <skill-name> --global --yes` again.
+3. Start a new agent/chat session so it reloads the skill.
+4. Run the skill with a real app URL and inspect the generated case artifacts and debug files.
 
 ## Available Skills
 
 - `exb-ai-testing`: App-aware AI Chat testing workflow for Experience Builder apps.
-
-## Repository Layout
-
-```text
-skills/
-└── exb-ai-testing/
-    ├── SKILL.md
-    ├── HUMAN-SOP.md
-    ├── README.md
-    ├── examples/
-    ├── templates/
-    └── tooling/
-```
-
-## Verify
-
-From this repository root:
-
-```bash
-npx skills add ./ --skill exb-ai-testing --list
-```

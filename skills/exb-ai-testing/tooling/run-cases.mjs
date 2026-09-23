@@ -40,14 +40,6 @@ if (!cases.length) {
   console.error(`[run-cases] No reviewed cases found${selectedCase ? ` for: ${selectedCase}` : ''}. Agent handoff is incomplete.`)
   process.exit(1)
 }
-const turnsPerCase = config.suite?.turnsPerCase
-if (config.suite?.questionSource !== 'custom' && Number.isInteger(turnsPerCase) && turnsPerCase > 0) {
-  const casesWithWrongTurnCount = cases.filter((testCase) => (testCase.turns || []).length !== turnsPerCase)
-  if (casesWithWrongTurnCount.length) {
-    console.error(`[run-cases] Auto-generated cases must contain exactly suite.turnsPerCase (${turnsPerCase}) turns. Invalid: ${casesWithWrongTurnCount.map((testCase) => `${testCase.id}=${testCase.turns?.length || 0}`).join(', ')}`)
-    process.exit(1)
-  }
-}
 const casesWithInvalidNames = cases.filter((testCase) => (
   typeof testCase.title !== 'string' || !testCase.title.trim() ||
   typeof testCase.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(testCase.id) ||

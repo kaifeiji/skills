@@ -1,23 +1,23 @@
 # Prompt Generation Rules
 
-Use this reference while authoring `suite.cases` after reading [prompt-generator-template.md](../templates/prompt-generator-template.md). The template defines the required config shape; this file helps choose high-value risks. Return only the config-compatible cases JSON required by the template, without markdown or commentary.
+Use this reference when authoring `suite.cases`. Return the complete config JSON with generated cases in `suite.cases`, as raw JSON.
 
-Before claiming an AI Chat capability, load [ai-chat-runtime-capabilities.md](./ai-chat-runtime-capabilities.md). Make positive expectations only for behavior the published app visibly exposes through a user path; a configured feature alone does not prove it is available to Chat.
+Before claiming an AI Chat capability, verify that the published app visibly exposes it through a user path. A configured feature, registered tool, agent name, or config entry becomes testable only when a user can reach it.
 
 ## Context To Use
 
-Ground cases in the context actually available from the app or tester:
+Ground cases in context actually available from the app or tester:
 
 - app URL, title, purpose, domain, and user personas
 - current page/view and visible state
 - global header/footer controls, including widgets exposed through a controller
-- dialog windows only when a visible user path can open them
+- dialog windows reachable through a visible user path
 - accessible pages plus section views, tabs, controllers, and alternate map/view states when evidenced
 - widgets mounted in an accessible page's layout, plus their connected maps, data sources, actions, and renderers
-- view-scoped or controller-hosted widgets only when the layout graph and visible runtime state show a reachable path
-- capability declarations from ExB project source only when that source is supplied
+- view-scoped or controller-hosted widgets when the layout graph and visible runtime state show a reachable path
+- capability declarations from ExB project source when that source is supplied
 
-When evidence is incomplete, choose prompts that expose uncertainty instead of assuming unavailable data or capabilities.
+When evidence is incomplete, choose prompts that expose uncertainty and make the missing evidence visible.
 
 ## Risk Selection
 
@@ -35,43 +35,136 @@ For every relevant accessible page, choose the highest-value risks supported by 
 - one meaningful missing-data, unavailable-action, or permission boundary when concretely evidenced
 - user-visible latency when a realistic task exposes it
 
-Use [prompt-scenario-guide.md](./prompt-scenario-guide.md) when selecting a concrete scenario or `watchFor` signal. Do not force a category when the page context cannot support it.
+Choose a category when the page context supports it.
 
-## Balanced Coverage
+## Turn Generation Protocol
 
-Treat the suite as a coverage matrix, not a field-question list or a business-analysis-only suite. For every relevant accessible page, distribute turns across the capabilities evidenced by that page. When a page has a loaded business data source, include at least two of these business task types where supported, while preserving turns for other applicable capability areas:
+The Turn Generation Protocol is the single source of truth for turn composition. Every auto-generated case follows it. When any other rule, hint, or example appears to conflict with it, the Turn Generation Protocol takes precedence.
 
-- **Query:** find records matching a place, condition, time, status, or user-provided value.
-- **Statistics:** count records or calculate an evidenced sum, average, minimum, maximum, or other supported aggregate.
-- **Summary:** group or roll up records by an evidenced category, date, geography, or status and explain the result.
-- **Comparison:** compare groups, locations, periods, or categories using a shared metric and clear denominator.
-- **Ranking or analysis:** identify highest/lowest results, outliers, concentration, trend, or a meaningful spatial relationship.
+For each auto-generated case, generate turns in this priority order:
 
-Use field-definition or schema-explanation questions only as supporting turns or when the user explicitly asks what a field means. Do not let a case become a field glossary. Across the suite, balance business data tasks with intent and ambiguity, source selection, map and selection state, page or Widget navigation, spatial relationships, app actions, renderer choice, follow-up memory, correction, recovery, and unsupported-capability handling whenever those capabilities are evidenced. If a category is unavailable, substitute another evidenced category and record the limitation in `expectedBehavior` or `watchFor` rather than inventing coverage.
+1. **Page Overview / Capability / How-to (required)**  
+   One turn about the current page's purpose, visible features, available widgets, or how to perform a task on this page. Ground it in the current page's visible title, layout, widgets, data sources, and reachable actions. Keep the scope to capabilities visible or reachable from the current page.
 
-## Conversation Shape
+2. **Query (when the page has a usable data source)**  
+   Find records by place, condition, time, status, or user-provided value.
 
-The ordered suite is one realistic conversation that continues across page-targeted cases. Each auto-generated case contributes exactly `suite.turnsPerCase` turns; use `5` only when that approved value is not changed by the user. At least 80% of turns must exercise evidenced app data, fields, actions, or workflows. Across the whole suite, use at most one unsupported or missing-data turn unless the user explicitly requests boundary-focused coverage. Mix direct asks, underspecified goals, visual references such as "this table" or "here", follow-ups, corrections, and source/state changes; make the first turn after a page transition understandable with the inherited conversation context.
+3. **Filter / Rank (when the page has a usable data source)**  
+   Narrow, sort, or rank records by an evidenced field or condition. Use a distinct user goal and a distinct query dimension from the Query turn.
+
+4. **Statistics (when the page has a usable data source)**  
+   Count, sum, average, min, max, or another supported aggregate. Use a distinct user goal and a distinct aggregation dimension from the Query and Filter / Rank turns.
+
+5. **Functional Widget Action (when the page has reachable actionable widgets)**  
+   One action turn per selected functional widget, up to 5 action turns.
+
+Turn requirements:
+
+- Turn 1 is always present.
+- Turns 2–4 are present when the page has a usable data source and the required fields or widgets support them.
+- Turn 5 is present when the page has reachable functional widgets.
+- The final turn count follows page capability.
+- Each turn has a distinct user goal, so Query, Filter / Rank, and Statistics stay non-redundant.
+- When a required data, widget, or action path is absent, the corresponding turn is omitted and the limitation is recorded in `expectedBehavior` or `watchFor`.
+
+## Business Task Coverage
+
+Query, Filter / Rank, and Statistics are optional sub-tasks that appear only when the page's data source, fields, and widgets support them.
+
+When the page has a loaded business data source, cover the available task types among:
+
+- Query
+- Filter / Rank
+- Statistics
+
+Use each task type with distinct wording and a distinct user goal. When the page supports only one task type, cover that one fully and record the limitation in `expectedBehavior` or `watchFor`.
+
+Cover only task types the page genuinely supports. Do not add a task type to satisfy a count, and do not reuse the same task with different wording to appear as a second type.
+
+Use field-definition or schema-explanation questions as supporting turns or when the user explicitly asks what a field means. Keep the case focused on real user tasks.
+
+## Functional Widget Selection
+
+A functional widget is a reachable widget that exposes at least one user-visible action, mutation, navigation, or presentation change.
+
+Pure layout widgets, static display widgets, widgets with no reachable action path, and widgets present only in config but not reachable on the current page stay outside the action-turn set.
+
+For each selected functional widget:
+
+- generate one action turn by default;
+- when the widget exposes multiple distinct high-value actions, choose the action that best matches a natural user goal;
+- rank widgets by user value, then by reachability, then by action clarity;
+- include up to 5 widget action turns per case;
+- when no functional widget is reachable, keep the case focused on turns 1–4.
+
+## Custom Questions Exception
+
+Custom questions are an explicit exception to the Turn Generation Protocol.
+
+When custom questions are supplied:
+
+- create exactly one case for the selected visible page;
+- use the supplied questions in their supplied order;
+- keep the supplied wording, order, and count;
+- apply the Turn Generation Protocol when custom questions are absent;
+- create cases for other pages when the user explicitly asks for that.
+
+## Case Naming and Page Targeting
+
+- Prefer a smaller suite of high-value conversations over shallow one-turn checks.
+- Name each case from its visible page title or business goal, and derive its distinct lowercase ASCII kebab-case `id` from that name.
+- Keep the internal app page identifier in `pageId`.
+- Cover a tab, view, or query variation of the same page inside that page's conversation.
+
+When custom questions are absent, generate one case for each relevant accessible page in `appContext.pages`. Generate separate cases for views, tabs, or URL query variants when the user explicitly asks for that.
+
+Before creating a case, verify that the page opens and has visible page content in the dedicated Playwright session.
+
+Omit pages that are inaccessible, permission-restricted, empty, or unable to support a meaningful AI task.
+
+Select the target with `pageId` and write its canonical `pageUrl` directly into the case. Derive it from the full config URL with the standard URL API: preserve the original origin, every query parameter in `search` (for example `?draft=true`), and the original hash; update only the pathname to the matched `/page/<encoded-title>` path.
+
+## Conversation Mix
+
+The ordered suite is one realistic conversation that continues across page-targeted cases. Later cases may inherit earlier context.
+
+At least 80% of generated turns exercise evidenced app data, fields, actions, or workflows. Across the whole suite, keep unsupported or missing-data turns to at most one unless the user explicitly requests boundary-focused coverage.
+
+Mix direct asks, underspecified goals, visual references such as "this table" or "here", follow-ups, corrections, and source/state changes. Make the first turn after a page transition understandable with the inherited conversation context.
 
 Generated turns speak as a user performing the real task now. Express fallback expectations as part of that direct request.
-
-Keep capability families balanced: in a normal five-turn case, aim for about two business/data turns and use the remaining turns for distinct evidenced capabilities such as map state, action or navigation, presentation, ambiguity, continuation, or recovery. Do not let field or schema questions dominate a case.
-
-When the user supplies custom questions, use exactly those questions as the turns of one case. Do not add generated questions, split them into multiple cases, or create cases for other pages unless the user explicitly asks for that.
-
-Prefer a smaller suite of high-value conversations over shallow one-turn checks. Name each case from its visible page title or business goal, and derive its distinct lowercase ASCII kebab-case `id` from that name. Keep the internal app page identifier in `pageId`; values such as `page_4` are not case names. Do not create a separate case merely for a tab, view, or query variation of the same page; cover those transitions inside the page's conversation when relevant.
 
 ## Case Quality Gate
 
 Before returning cases, confirm that each one:
 
-- uses only data, widgets, actions, pages, and capabilities evidenced by supplied context
-- uses field-level requests grounded in explicitly evidenced business attributes
-- resolves every field-level request to a loaded field name or alias in the matched root data source or layer schema
-- has a natural user goal rather than an implementation-level command
-- directly performs the user task
-- preserves every query parameter and hash from the config URL in `pageUrl`; parameters such as `draft=true` are part of the tested app state
-- can reveal a wrong interpretation, source, action, state transition, presentation, or recovery behavior
-- has `expectedBehavior` describing direction rather than exact response wording
-- has `watchFor` items that identify plausible observable failure symptoms
+- uses data, widgets, actions, pages, and capabilities evidenced by supplied context;
+- uses field-level requests grounded in explicitly evidenced business attributes;
+- resolves every field-level request to a loaded field name or alias in the matched root data source or layer schema;
+- has a natural user goal rather than an implementation-level command;
+- directly performs the user task;
+- preserves every query parameter and hash from the config URL in `pageUrl`;
+- reveals a wrong interpretation, source, action, state transition, presentation, or recovery behavior;
+- has `expectedBehavior` describing direction rather than exact response wording;
+- has `watchFor` items that identify plausible observable failure symptoms;
+- follows the Turn Generation Protocol when custom questions are absent.
+
 Build balanced suites from evidenced capabilities, flexible expected behavior, ambiguity, correction, source selection, map state, and continuation. Use an explicit clarification path when source choice or user intent materially changes the result.
+
+## Output Contract
+
+Return valid JSON matching the app config structure, as raw JSON.
+
+For every generated case, confirm:
+
+- `pageId` matches a reachable visible page;
+- `pageUrl` preserves the original origin, every query parameter in `search`, and the original hash; only the pathname is updated to the matched `/page/<encoded-title>` path;
+- `title` is the visible page title or a concise business goal;
+- `id` is lowercase ASCII kebab-case derived from `title`;
+- turns follow the Turn Generation Protocol when custom questions are absent;
+- field-level turns resolve to loaded field names or aliases in the matched root data source or layer schema;
+- `expectedBehavior` describes direction rather than exact wording;
+- `watchFor` identifies plausible observable failure symptoms;
+- `verification.visibleChecks` and `verification.failureSignals` are present when a stable visible outcome can be checked.
+
+Return raw JSON only.
