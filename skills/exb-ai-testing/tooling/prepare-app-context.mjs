@@ -128,7 +128,7 @@ fs.writeFileSync(output, JSON.stringify(omitEmptyValues(config), null, 2) + '\n'
 console.log(`[prepare-app-context] Wrote config to: ${output}`)
 console.log(`[prepare-app-context] App title: ${appTitle}`)
 console.log(`[prepare-app-context] Generated app slug: ${appSlug}`)
-console.log('[prepare-app-context] Agent handoff required: add and review suite.cases before script execution.')
+console.log('[prepare-app-context] Agent handoff: review suite.cases and preserve each generated pageUrl as the canonical page URL.')
 
 async function requireValidSession(page) {
   await page.waitForFunction(() => Boolean(window._sessionManager), null, { timeout: 60_000 })

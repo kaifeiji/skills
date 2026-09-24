@@ -100,7 +100,7 @@
         "title": "<visible-page-title-or-business-goal>",
         "pageId": "<page-id>",
         "pageTitle": "<visible page title>",
-        "pageUrl": "https://<app-url>/page/<generated-page-title>",
+        "pageUrl": "https://<app-url>/page/<canonical-page-title-with-spaces-as-hyphens>",
         "intent": "What user goal is being tested on this page?",
         "turns": [],
         "expectedBehavior": "What should be true about the app and assistant behavior?",

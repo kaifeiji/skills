@@ -125,7 +125,7 @@ Before creating a case, verify that the page opens and has visible page content 
 
 Omit pages that are inaccessible, permission-restricted, empty, or unable to support a meaningful AI task.
 
-Select the target with `pageId` and write its canonical `pageUrl` directly into the case. Derive it from the full config URL with the standard URL API: preserve the original origin, every query parameter in `search` (for example `?draft=true`), and the original hash; update only the pathname to the matched `/page/<encoded-title>` path.
+Select the target with `pageId` and preserve the generated case's canonical `pageUrl` when it already exists. The generated value is authoritative because it uses the app's page-path format. When a URL must be created, derive it from the full config URL with the standard URL API: preserve the original origin, every query parameter in `search` (for example `?draft=true`), and the original hash; replace spaces in the visible page title with hyphens before URL encoding the pathname segment. For example, `User Guide` maps to `/page/User-Guide?draft=true`, not `/page/User%20Guide?draft=true`.
 
 ## Conversation Mix
 
@@ -147,6 +147,8 @@ Before returning cases, confirm that each one:
 - has a natural user goal rather than an implementation-level command;
 - directly performs the user task;
 - preserves every query parameter and hash from the config URL in `pageUrl`;
+- preserves an existing generated `pageUrl` as the authoritative canonical page URL;
+- represents spaces in a newly derived page path as hyphens before URL encoding (for example, `User Guide` becomes `/page/User-Guide`);
 - reveals a wrong interpretation, source, action, state transition, presentation, or recovery behavior;
 - has `expectedBehavior` describing direction rather than exact response wording;
 - has `watchFor` items that identify plausible observable failure symptoms;
