@@ -638,9 +638,9 @@ function appendTurnDebug(lines, turn) {
   appendDebugSection(lines, 'Intermediate Results', intermediateResults.map((entry) => (
     entry.title ? `${entry.title}: ${entry.content}` : entry.content
   )))
-  const plannedDescriptions = new Set([...plannedSteps, ...pendingSteps].map((step) => step.description).filter(Boolean))
-  appendDebugSection(lines, 'Sub-agents and Actions', completedSteps.map((step) => formatStep(step, 'Completed', {
-    includeDescription: Boolean(step.description && !plannedDescriptions.has(step.description)),
+  appendDebugSection(lines, 'Sub-agents and Actions', completedSteps.map((step, index) => formatStep(step, 'Completed', {
+    index: index + 1,
+    includeDescription: true,
   })))
   appendDebugSection(lines, 'Renderers', rendererSteps.map((step) => formatStep(step, 'Rendered')))
   appendDebugSection(lines, 'Agent Response', [finalContent || '(response not captured)'])
@@ -681,15 +681,31 @@ function appendDebugSection(lines, title, values) {
 }
 
 function formatStep(step, state, options = {}) {
-  const agent = step.agent ? `Agent ${step.agent}` : 'Agent unavailable'
-  const description = step.description || 'No description'
+  const agent = step.agent ? `Agent ${step.agent}` : ''
+  const description = step.description || ''
   const stepOutput = step.output
   const statusText = step.status ? ` Status: ${step.status}.` : ''
   const retryText = step.retry ? ' Retried.' : ''
-  const actionText = step.actionExecutionIds?.length ? ` Action executions: ${step.actionExecutionIds.join(', ')}.` : ''
+  const outputDetails = stepOutput ? [
+    `Output type: ${stepOutput.type || 'result'}.`,
+    stepOutput.description ? `Output description: ${stepOutput.description}` : null,
+    isReadableOutputPayload(stepOutput.payload) ? `Output payload:\n${stepOutput.payload}` : null,
+  ].filter(Boolean).join('\n') : ''
+  const indexText = options.index ? `${options.index}. ` : ''
   const descriptionText = options.includeDescription === false ? '' : `; ${description}`
-  const outputText = stepOutput ? ` Output: ${stepOutput.type || 'result'}.` : ''
-  return `${state}: ${agent}${descriptionText}.${statusText}${retryText}${actionText}${outputText}`
+  return `${indexText}${state}: ${agent}${descriptionText}.${statusText}${retryText}${outputDetails ? `\n${outputDetails}` : ''}`
+}
+
+function isReadableOutputPayload(payload) {
+  if (typeof payload !== 'string' || !payload.trim()) return false
+  try {
+    const parsed = JSON.parse(payload)
+    return !(Array.isArray(parsed) && parsed.length && parsed.every((item) => (
+      typeof item === 'string' && item.startsWith('chat_output_')
+    )))
+  } catch {
+    return true
+  }
 }
 
 function stringifyDebugValue(value) {
