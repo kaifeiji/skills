@@ -48,7 +48,7 @@ Gather the visible app context and the reachable page/widget state needed for ca
 
 The output should be a config with the app context and an empty `suite.cases` list before case generation begins.
 
-The config filename is mandatory: `config/<app-slug>-NN.json`, with `NN` starting at `01` and incrementing. The default artifact folder is also mandatory: `artifacts/<YYYYMMDD>-<app-slug>-NN-MM/`; `MM` increments for repeated runs of the same config. Invalid custom output names are rejected.
+The config filename is mandatory: `config/<app-slug>-NN.json`, with `NN` starting at `01` and incrementing. The runner creates the default artifact folder as `artifacts/<YYYYMMDD>-<app-slug>-NN-MM/`; `MM` increments for repeated runs of the same config. Do not create or extend an artifact path manually. Invalid custom output names are rejected.
 
 ## 5. Author the case suite
 
@@ -81,13 +81,13 @@ Do not start execution until the case plan has been approved.
 
 Execute the reviewed cases in one continuous conversation flow, keeping the app state and prior context intact across the run.
 
-Invoke the runner with the run artifact directory that contains `run-config.json`:
+Invoke the runner with the reviewed config file:
 
 ```bash
-node "<skill-root>/tooling/run-cases.mjs" "<run-directory>"
+node "<skill-root>/tooling/run-cases.mjs" --config "config/<app-slug>-NN.json"
 ```
 
-Pass the containing directory. If the runner reports an argument-format error, retry once with the directory that contains `run-config.json`; the documented form is sufficient.
+Let the runner create the artifact directory. For a caller-selected location, pass one correctly formatted directory with `--output`; never nest it under a previous artifact directory.
 
 During execution, check for:
 

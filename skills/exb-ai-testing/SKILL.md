@@ -51,13 +51,13 @@ Progress updates are informational and add no approval stops beyond the Human Ch
 
 ### Runner Invocation Contract
 
-Run the cases runner with the run artifact directory that contains `run-config.json`:
+Run the cases runner with the reviewed config file:
 
 ```bash
-node "<skill-root>/tooling/run-cases.mjs" "<run-directory>"
+node "<skill-root>/tooling/run-cases.mjs" --config "config/<app-slug>-NN.json"
 ```
 
-`<run-directory>` contains `run-config.json` and the reviewed suite. When an argument-format error appears, pass this containing directory and retry once. Use the documented directory form directly.
+Without `--output`, the runner creates `artifacts/<YYYYMMDD>-<app-slug>-NN-MM`, where `MM` increments for repeated runs of the same config. Do not create an artifact directory or append a suffix yourself. When an explicit output is required, pass exactly one directory in that format with `--output`; never create it beneath an existing artifact directory.
 
 ### Agent Input Boundary
 

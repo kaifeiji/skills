@@ -47,13 +47,18 @@ if (!cases.length) {
   console.error(`[run-cases] No reviewed cases found${selectedCase ? ` for: ${selectedCase}` : ''}. Agent handoff is incomplete.`)
   process.exit(1)
 }
-const casesWithInvalidNames = cases.filter((testCase) => (
-  typeof testCase.title !== 'string' || !testCase.title.trim() ||
-  typeof testCase.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(testCase.id) ||
-  /^(?:page|widget|view|case)[_-]?\d+$/i.test(testCase.id)
+const casesWithMissingTitles = cases.filter((testCase) => typeof testCase.title !== 'string' || !testCase.title.trim())
+if (casesWithMissingTitles.length) {
+  console.error(`[run-cases] Every case requires a title. Missing: ${casesWithMissingTitles.map((testCase) => testCase.id || '(missing id)').join(', ')}`)
+  process.exit(1)
+}
+const casesWithUnsafeIds = cases.filter((testCase) => (
+  typeof testCase.id !== 'string' || !testCase.id.trim() || testCase.id !== testCase.id.trim() ||
+  testCase.id === '.' || testCase.id === '..' || /[<>:"/\\|?*\x00-\x1F]/.test(testCase.id) ||
+  testCase.id.endsWith('.') || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(testCase.id)
 ))
-if (casesWithInvalidNames.length) {
-  console.error(`[run-cases] Case id/title must use a page title or business goal, with id in lowercase kebab-case. Invalid: ${casesWithInvalidNames.map((testCase) => testCase.id || '(missing id)').join(', ')}`)
+if (casesWithUnsafeIds.length) {
+  console.error(`[run-cases] Case id must be safe for an artifact directory. Invalid: ${casesWithUnsafeIds.map((testCase) => testCase.id || '(missing id)').join(', ')}`)
   process.exit(1)
 }
 const appPages = config.appContext?.pages || []
@@ -278,6 +283,7 @@ async function readRuntime(page) {
       content: contentText(message?.content),
     })
     const state = runtime.state || {}
+    const interrupt = runtime.currentInterrupt || null
     const completedSteps = (state.completedSteps || runtime.completedSteps || []).map((step) => ({
       description: step?.description || null,
       agent: step?.agent || null,
@@ -334,6 +340,14 @@ async function readRuntime(page) {
       threadId: runtime.threadId || null,
       streamEpoch: runtime.streamEpoch ?? null,
       isWorking: runtime.isWorking ?? null,
+      interrupt: interrupt ? {
+        id: interrupt.id || null,
+        agentId: interrupt.agentId || null,
+        name: interrupt.render?.name || null,
+        uri: interrupt.render?.uri || null,
+        message: interrupt.render?.message || null,
+        params: interrupt.render?.params || null,
+      } : null,
       chatHistory,
       userInputs,
       messages,
@@ -406,6 +420,7 @@ async function readRuntime(page) {
       threadId: runtime.threadId || null,
       streamEpoch: runtime.streamEpoch ?? null,
       isWorking: runtime.isWorking ?? null,
+      interrupt: snapshot.interrupt,
       chatHistory,
       userInputs,
       messages,
@@ -426,6 +441,8 @@ async function readRuntime(page) {
         pendingStepCount: pendingSteps.length,
         isWorking: runtime.isWorking ?? null,
         streamEpoch: runtime.streamEpoch ?? null,
+        interruptId: snapshot.interrupt?.id || null,
+        interruptName: snapshot.interrupt?.name || null,
         latestCompletedMessageId: completedSteps.at(-1)?.humanMessageId || null,
       },
     }
@@ -468,8 +485,107 @@ function runtimeTerminalStatus(runtime, before) {
   return null
 }
 
+// Resolve only deterministic, self-contained inputs. Inputs needing external data stop with evidence.
+function resolveHumanInput(interrupt) {
+  const { name, params = {} } = interrupt
+  if (name === 'booleanChoice') {
+    return {
+      status: 'resumed',
+      choice: 'approve',
+      payload: {
+        resultDescription: `${params.message || interrupt.message || 'Request'}\n\nYou've approved the request. The agent will proceed to the next step.`,
+        choice: true,
+      },
+    }
+  }
+  if (name === 'singleSelect') {
+    const option = params.options?.[0]
+    if (option) {
+      return {
+        status: 'resumed',
+        choice: String(option.label),
+        payload: {
+          resultDescription: `Selected option: ${option.value}`,
+          value: option.value,
+        },
+      }
+    }
+  }
+  if (name === 'multiSelector') {
+    const selectedValues = params.initialSelectedValues?.length
+      ? params.initialSelectedValues
+      : params.options?.slice(0, 1).map((option) => String(option.value))
+    if (selectedValues?.length) {
+      const labels = params.options
+        ?.filter((option) => selectedValues.includes(String(option.value)))
+        .map((option) => option.label)
+        .join(', ')
+      return {
+        status: 'resumed',
+        choice: labels || selectedValues.join(', '),
+        payload: {
+          resultDescription: `Selected: ${labels || selectedValues.join(', ')}`,
+          values: selectedValues,
+        },
+      }
+    }
+  }
+  if (name === 'widgetSelector') {
+    const widget = params.widgets?.[0]
+    if (widget) {
+      return {
+        status: 'resumed',
+        choice: widget.label,
+        payload: {
+          resultDescription: `Selected widget: ${widget.label}`,
+          value: widget.id,
+          widget,
+        },
+      }
+    }
+  }
+  if (name === 'queryProgress') return { status: 'waiting' }
+  return {
+    status: 'requires-human-input',
+    reason: name === 'fileUploader'
+      ? 'A file must be selected from the local filesystem.'
+      : name === 'itemSelector'
+        ? 'A portal item must be selected from live search results.'
+        : `No safe automatic response is defined for ${name || 'an unnamed'} HumanInput.`,
+  }
+}
+
+async function resumeHumanInput(page, interrupt) {
+  const resolution = resolveHumanInput(interrupt)
+  const evidence = {
+    id: interrupt.id,
+    agentId: interrupt.agentId,
+    name: interrupt.name,
+    message: interrupt.message,
+    status: resolution.status,
+    choice: resolution.choice || null,
+    reason: resolution.reason || null,
+    capturedAt: new Date().toISOString(),
+  }
+  if (resolution.status !== 'resumed') return evidence
+
+  const resumed = await page.evaluate(({ id, payload }) => {
+    const runtime = window._assistantRuntime
+    if (!runtime?.currentInterrupt || runtime.currentInterrupt.id !== id) return false
+    runtime.resumeInterrupt(payload)
+    return true
+  }, { id: interrupt.id, payload: resolution.payload })
+  if (!resumed) {
+    evidence.status = 'stale'
+    evidence.reason = 'The interrupt was no longer pending when the runner attempted to resume it.'
+  }
+  return evidence
+}
+
 async function waitForTurn(page, before, deadline) {
   const trace = []
+  const humanInputs = []
+  const handledInterrupts = new Set()
   let previousSignal = JSON.stringify(before.signal)
   while (true) {
     const runtime = await readRuntime(page)
@@ -479,9 +595,20 @@ async function waitForTurn(page, before, deadline) {
       trace.push({ capturedAt: new Date().toISOString(), signal: runtime.signal, snapshot: runtime.snapshot })
       previousSignal = signal
     }
+    const interrupt = runtime.interrupt
+    const interruptKey = interrupt ? `${interrupt.agentId || ''}:${interrupt.id || ''}` : null
+    if (interruptKey && !handledInterrupts.has(interruptKey)) {
+      handledInterrupts.add(interruptKey)
+      const humanInput = await resumeHumanInput(page, interrupt)
+      humanInputs.push(humanInput)
+      trace.push({ capturedAt: humanInput.capturedAt, humanInput, signal: runtime.signal, snapshot: runtime.snapshot })
+      if (humanInput.status === 'requires-human-input') {
+        return { ...runtime, status: 'human-input-required', trace, humanInputs }
+      }
+    }
     const status = terminalStatus(runtime.transcript) || runtimeTerminalStatus(runtime, before)
-    if (changed && status) return { ...runtime, status, trace }
-    if (Date.now() >= deadline) return { ...runtime, status: 'timeout', trace }
+    if (changed && status) return { ...runtime, status, trace, humanInputs }
+    if (Date.now() >= deadline) return { ...runtime, status: 'timeout', trace, humanInputs }
     await page.waitForTimeout(500)
   }
 }
@@ -582,6 +709,7 @@ async function writeCaseDebug(caseDir, caseInfo, runtime, turnRecords) {
       runtimeBefore: turn.runtimeBefore?.snapshot || null,
       runtimeTrace: turn.runtimeAfter?.trace || [],
       runtimeAfter: turn.runtimeAfter?.snapshot || null,
+      humanInputs: turn.runtimeAfter?.humanInputs || [],
       rendererWait: turn.runtimeAfter?.rendererWait || null,
     })),
     finalRuntime: runtime.snapshot || null,
@@ -621,6 +749,9 @@ function appendTurnDebug(lines, turn) {
   if (turn.error) lines.push(`- Runner error: ${turn.error}`)
 
   appendDebugSection(lines, 'User Prompt', [turn.prompt])
+  appendDebugSection(lines, 'Human Inputs', (runtime.humanInputs || []).map((input) => (
+    `${input.name || 'unknown'} (${input.status})${input.choice ? `: ${input.choice}` : ''}${input.reason ? ` - ${input.reason}` : ''}`
+  )))
   appendDebugSection(lines, 'Execution Summary', formatExecutionSummary(runtime))
   appendDebugSection(lines, 'Renderer UI', [
     runtime.rendererWait?.status && runtime.rendererWait.status !== 'not-requested'
@@ -743,7 +874,9 @@ async function runCase(page, testCase, index) {
       else await input.press('Enter')
       const turnDeadline = turnStartedMs + turnTimeout
       const after = await waitForTurn(page, runtime, turnDeadline)
-      after.rendererWait = await waitForRenderer(page, after, turnDeadline)
+      after.rendererWait = after.status === 'human-input-required'
+        ? { status: 'not-requested' }
+        : await waitForRenderer(page, after, turnDeadline)
       if (after.status !== 'timeout' && after.rendererWait.status === 'timeout') after.status = 'timeout'
       runtime = after
       turn.runtimeAfter = after
@@ -757,6 +890,12 @@ async function runCase(page, testCase, index) {
           : `Turn exceeded the ${Math.round(turnTimeout / 1000)} second limit; the case was stopped and the next case will continue.`
         console.log(`[run-cases] Turn ${turn.index} exceeded ${Math.round(turnTimeout / 1000)}s; stopping case ${testCase.id}.`)
         turn.status = 'timeout'
+      }
+      if (after.status === 'human-input-required') {
+        const input = after.humanInputs.at(-1)
+        turn.error = `HumanInput ${input?.name || '(unknown)'} requires tester input: ${input?.reason || 'no automatic response is available.'}`
+        turn.status = 'human-input-required'
+        console.log(`[run-cases] Turn ${turn.index} requires human input; stopping case ${testCase.id}.`)
       }
       const screenshotName = `turn-${String(turnIndex + 1).padStart(2, '0')}${turn.error ? '-error' : ''}.png`
       await page.screenshot({ path: path.join(caseDir, screenshotName), fullPage: true })
@@ -776,6 +915,7 @@ async function runCase(page, testCase, index) {
       prompt: turn.prompt,
       status: turn.status,
       runtimeStatus: turn.runtimeStatus || null,
+      humanInputs: turn.runtimeAfter?.humanInputs || [],
       startedAt: turn.startedAt,
       endedAt: turn.endedAt || null,
       durationMs: turn.durationMs,
@@ -784,12 +924,13 @@ async function runCase(page, testCase, index) {
       screenshot: `turn-${String(turn.index).padStart(2, '0')}${turn.error ? '-error' : ''}.png`,
     })
     fs.writeFileSync(path.join(caseDir, 'result.json'), JSON.stringify(result, null, 2) + '\n')
-    if (turn.status === 'timeout') break
+    if (turn.status === 'timeout' || turn.status === 'human-input-required') break
   }
 
   result.status = result.turns.some((turn) => [
     'failed',
     'timeout',
+    'human-input-required',
     'runtime-unavailable',
   ].includes(turn.status)) ? 'failed' : 'completed'
   result.endedAt = new Date().toISOString()

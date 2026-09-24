@@ -41,38 +41,24 @@ Choose a category when the page context supports it.
 
 The Turn Generation Protocol is the single source of truth for turn composition. Every auto-generated case follows it. When any other rule, hint, or example appears to conflict with it, the Turn Generation Protocol takes precedence.
 
-The protocol defines a capability-based turn set. Build each case from the relevant accessible page, adding a turn only when the page evidence supports that capability. Keep unrelated page goals in separate cases.
+The protocol defines suite-level coverage, not a fixed turn list for every page. A case represents one coherent business goal. Split distinct goals into separate cases even when they run on the same page.
 
-For each auto-generated case, generate turns in this priority order:
+For each accessible page, identify these goal groups when supported by evidence:
 
-1. **Page Overview / Capability / How-to (required)**  
-   One turn about the current page's purpose, visible features, available widgets, or how to perform a task on this page. Ground it in the current page's visible title, layout, widgets, data sources, and reachable actions. Keep the scope to capabilities visible or reachable from the current page.
+1. **Orientation**: understand the page, a visible capability, or how to begin a task.
+2. **Data investigation**: find, compare, filter, rank, or summarize records using evidenced fields.
+3. **Action or state change**: complete a meaningful map, widget, navigation, sharing, presentation, or workflow action.
+4. **Recovery or ambiguity**: clarify an underspecified request, correct a prior request, or handle one evidenced unavailable-data or permission boundary.
 
-2. **Query (when the page has a usable data source)**  
-   Find records by place, condition, time, status, or user-provided value.
+Create one case per distinct goal group that has a meaningful user outcome. A page supporting both data investigation and a map/widget action normally produces two cases, not one five-turn case. An orientation-only page may produce one short case. Do not split a single simple task into artificial variants merely to increase case count.
 
-3. **Filter / Rank (when the page has a usable data source)**  
-   Narrow, sort, or rank records by an evidenced field or condition. Use a distinct user goal and a distinct query dimension from the Query turn.
+Within a case, use the fewest turns that exercise its goal, usually 2-4. A one-turn case is valid for a complete, observable task; a case over four turns needs a concrete dependency between every adjacent turn. Use a realistic sequence such as request -> constraint -> follow-up, request -> visible result -> correction, or ambiguous request -> clarification -> completion. Do not begin every case with an overview question, and do not force Query, Filter / Rank, Statistics, and widget actions into one conversation.
 
-4. **Statistics (when the page has a usable data source)**  
-   Count, sum, average, min, max, or another supported aggregate. Use a distinct user goal and a distinct aggregation dimension from the Query and Filter / Rank turns.
-
-5. **Functional Widget Action (when the page has reachable actionable widgets)**  
-   Add one action turn for each selected functional widget, up to the supported maximum of 5 action turns.
-
-Turn requirements:
-
-- Start with the overview turn for every case.
-- Add Query, Filter / Rank, and Statistics turns when the page has the corresponding data source, fields, and supported task.
-- Add widget action turns for reachable functional widgets, using one distinct high-value action per selected widget.
-- Keep each turn tied to a distinct user goal and let the resulting turn count reflect the page capabilities.
-- Record unsupported data, widget, or action paths in `expectedBehavior` or `watchFor`.
-
-Use the numbered sections as capability checks in priority order. An overview-only page produces one turn; data capabilities add their supported task turns; reachable widget actions add their selected action turns. The page evidence determines the final count.
+Across the suite, cover the supported Query, Filter / Rank, Statistics, and functional widget-action capabilities. Put each capability in the case where it best fits the user's goal. Record unsupported data, widget, or action paths in `expectedBehavior` or `watchFor`.
 
 ## Business Task Coverage
 
-Query, Filter / Rank, and Statistics are optional sub-tasks that appear only when the page's data source, fields, and widgets support them.
+Query, Filter / Rank, and Statistics are optional suite-level task types that appear only when the page's data source, fields, and widgets support them.
 
 When the page has a loaded business data source, cover the available task types among:
 
@@ -80,7 +66,7 @@ When the page has a loaded business data source, cover the available task types 
 - Filter / Rank
 - Statistics
 
-Use each task type with distinct wording and a distinct user goal. When the page supports only one task type, cover that one fully and record the limitation in `expectedBehavior` or `watchFor`.
+Use each task type with distinct wording and a distinct user goal. Distribute them across cases when they represent separate user outcomes. When the page supports only one task type, cover that one fully and record the limitation in `expectedBehavior` or `watchFor`.
 
 Cover only task types the page genuinely supports. Do not add a task type to satisfy a count, and do not reuse the same task with different wording to appear as a second type.
 
@@ -94,11 +80,11 @@ Pure layout widgets, static display widgets, widgets with no reachable action pa
 
 For each selected functional widget:
 
-- generate one action turn by default;
+- create an action case when its action has a distinct user outcome;
 - when the widget exposes multiple distinct high-value actions, choose the action that best matches a natural user goal;
 - rank widgets by user value, then by reachability, then by action clarity;
-- include up to 5 widget action turns per case;
-- when no functional widget is reachable, keep the case focused on turns 1–4.
+- keep one case focused on one widget action or one tightly coupled workflow;
+- when no functional widget is reachable, omit action cases.
 
 ## Custom Questions Exception
 
@@ -114,12 +100,12 @@ When custom questions are supplied:
 
 ## Case Naming and Page Targeting
 
-- Prefer a smaller suite of high-value conversations over shallow one-turn checks.
+- Prefer a small suite of high-value, goal-focused conversations over one catch-all conversation or shallow one-turn checks.
 - Name each case from its visible page title or business goal, and derive its distinct lowercase ASCII kebab-case `id` from that name.
 - Keep the internal app page identifier in `pageId`.
 - Cover a tab, view, or query variation of the same page inside that page's conversation.
 
-When custom questions are absent, generate one case for each relevant accessible page in `appContext.pages`. Generate separate cases for views, tabs, or URL query variants when the user explicitly asks for that.
+When custom questions are absent, generate one or more cases for each relevant accessible page in `appContext.pages`, based on the distinct supported goal groups. Generate separate cases for views, tabs, or URL query variants when the user explicitly asks for that.
 
 Before creating a case, verify that the page opens and has visible page content in the dedicated Playwright session.
 
@@ -133,7 +119,7 @@ The ordered suite is one realistic conversation that continues across page-targe
 
 At least 80% of generated turns exercise evidenced app data, fields, actions, or workflows. Across the whole suite, keep unsupported or missing-data turns to at most one unless the user explicitly requests boundary-focused coverage.
 
-Mix direct asks, underspecified goals, visual references such as "this table" or "here", follow-ups, corrections, and source/state changes. Make the first turn after a page transition understandable with the inherited conversation context.
+Mix direct asks, underspecified goals, visual references such as "this table" or "here", follow-ups, corrections, and source/state changes. Vary opening language across cases: begin with the user's task, decision, or problem rather than repeatedly asking what the page can do. Make the first turn after a page transition understandable with the inherited conversation context.
 
 Generated turns speak as a user performing the real task now. Express fallback expectations as part of that direct request.
 
