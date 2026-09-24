@@ -1,10 +1,53 @@
 # Analysis Report Rules
 
+You are reviewing automated AI Chat e2e artifacts as a human usability tester and product-minded engineer.
+
+Your job is to read one Playwright run output folder and produce a concise Markdown findings report.
+
 Return Markdown only. Use the selected output language consistently across the whole report.
 
-## Inputs
+## Output Language
 
-Use the artifacts available for the executed run. When the run summary filename is needed, use `summary.json`.
+Use the configured run language. For `en`, use these exact field labels: `Test Scope`, `User Prompt`, `Answer Summary`, `Duration`, `Status`, `Judgment`, and `Key Debug`. For `zh`, use: `测试范围`, `用户 Prompt`, `回答摘要`, `耗时`, `状态`, `判断`, and `关键 Debug`.
+
+Prefix every status value with its icon: `✅ Success` / `✅ 成功`, `⚠️ Partial Success` / `⚠️ 部分成功`, `❌ Failure` / `❌ 失败`, or `🚨 Error` / `🚨 错误`.
+
+## Inputs To Review
+
+The tester will provide some or all of:
+
+- run-config: app context and prompt suite JSON
+- summary.json: run summary JSON
+- case-debug.md: per turn debug information
+- case-debug.json: per-turn debug JSON
+- screenshots: turn screenshots
+- result.json: per-case result JSON
+
+## Evidence Order
+
+Start with `case-debug.md`. If it contains a prompt, usable Agent Response, relevant plan/action evidence, and no visible contradiction, it is sufficient for a concise text-only finding.
+
+Open the turn screenshot whenever `case-debug.md` reports a renderer UI, the prompt requests a table/chart/list/map or another visual presentation, visible app state matters, the response is marked missing, Markdown is ambiguous, or debug text conflicts with expected behavior. Renderer output is user-visible evidence and cannot be judged from Agent Response text alone. Use `case-debug.json` only when Markdown cannot explain the cause and raw business-state evidence is needed.
+
+The final `analysis.md` must still include the clickable turn screenshot for every turn, even when the agent did not open or inspect that image during analysis. The image link is report evidence for the reader, not a requirement to feed every screenshot into the agent's analysis context.
+
+When supplemental evidence is needed, use this order:
+
+1. Inspect the screenshot for the visible final answer, counts, renderer, loading/empty state, error, and page context.
+2. Use `result.json` for prompt, timing, and screenshot filenames; do not reconstruct answers from page chrome or stale turns.
+3. Use `case-debug.json` to explain state, plan, steps, messages, data-source context, or action details that Markdown does not expose.
+4. If sources disagree, report the disagreement and classify the user-visible state from the screenshot.
+5. Before calling a response missing, search supplemental screenshot evidence for the requested answer.
+
+For every turn, embed the actual screenshot link and state whether the requested result is visibly present, partial, or absent only when the screenshot was inspected. Read the filename from `result.json` at `turns[].screenshot`, resolve it from the run-root `analysis.md` as `./<case-id>/<screenshot>`, and verify that file exists before writing the report. Use a clickable image reference:
+
+```markdown
+[![Turn 1 screenshot](./<case-id>/turn-01.png)](./<case-id>/turn-01.png)
+```
+
+If a screenshot was needed but not emitted, state the evidence gap. Do not substitute a plain-text path, invent a link, or write a user-visible finding from `result.json` alone.
+
+Do not omit the prompt or answer summary even when the turn failed. Do not use timing labels, lifecycle status, or raw internal renderer text as the answer summary.
 
 ## Debug Evidence Budget
 
@@ -51,62 +94,20 @@ Every turn contains, in this order, using only the selected-language labels:
 6. the judgment and user impact;
 7. one `Key Debug` when the status is non-success and the line proves the cause.
 
-## Turn Generation Protocol Reference
-
-The Turn Generation Protocol defined in the prompt-generation rules is the single source of truth for turn composition. Use it as the expected shape for every auto-generated case.
-
-Expected turn types, in priority order:
-
-1. **Page Overview / Capability / How-to (required)**  
-   One turn about the current page's purpose, visible features, available widgets, or how to perform a task on this page.
-
-2. **Query (when the page has a usable data source)**  
-   Find records by place, condition, time, status, or user-provided value.
-
-3. **Filter / Rank (when the page has a usable data source)**  
-   Narrow, sort, or rank records by an evidenced field or condition.
-
-4. **Statistics (when the page has a usable data source)**  
-   Count, sum, average, min, max, or another supported aggregate.
-
-5. **Functional Widget Action (when the page has reachable actionable widgets)**  
-   One action turn per selected functional widget, up to 5 action turns.
-
-Custom questions are an explicit exception. When custom questions are supplied, the supplied questions and their order define the expected turns.
-
-## Turn Classification
-
-Classify each turn against its intended type:
-
-- Page Overview / Capability / How-to
-- Query
-- Filter / Rank
-- Statistics
-- Functional Widget Action
-- Custom Question (when custom questions are supplied)
-
-When a turn does not fit its intended type, report the mismatch as a finding when it affects the user-visible result or the case's ability to test the intended behavior.
-
-## Protocol Consistency
-
-Check whether the generated case follows the Turn Generation Protocol:
-
-- Is the required page overview turn present?
-- Are query, filter/rank, and statistics turns present when the page supports them?
-- Are query, filter/rank, and statistics turns distinct in user goal and query dimension?
-- Were any task types added only to satisfy a count, rather than because the page supports them?
-- Is the widget action turn limited to reachable functional widgets and at most 5?
-- Does the turn set reflect the page capabilities identified by the protocol?
-- Are custom questions used exactly as supplied, without added or rewritten turns?
-
-Report protocol mismatches as findings when they affect the user-visible result or the case's ability to test the intended behavior.
-
 ## Status Rules
 
-- `✅ Success`: the requested user goal is substantially visible; keep the evaluation brief. A verified zero-match result counts as a complete query result.
-- `⚠️ Partial Success`: some answer/result is visible but a field, renderer, action, page state, or context is incomplete; analyze the gap.
-- `❌ Failure`: the user goal was not completed without a concrete system exception; explain the broken chain.
-- `🚨 Error`: a concrete action error, data-source error, 403, 429, timeout, or other exception blocked the result; explain the error chain.
+- `✅ Success`: the requested user goal is substantially visible in the final user-facing answer or renderer. For a query, lookup, comparison, ranking, or aggregation, the requested result value(s), record(s), or a verified zero-match result must be visible. The presence of a related map, layer, table, or data source alone is not success.
+- `⚠️ Partial Success`: the assistant made useful progress or produced a relevant result, but a non-essential part of the requested outcome is incomplete or degraded. Examples include a missing secondary field, an incomplete list, a renderer that omits some returned records, an action that changed the app but did not fully present the result, or a correct answer that lacks requested context. State exactly what is present and what remains missing.
+- `❌ Failure`: the primary user goal was not completed, even when the system returned normally and no exception occurred. Use this when the answer is missing, refuses or defers the requested result, uses the wrong source or target, performs no effective action, or gives only surrounding context without the requested result. A completed runner status, ready renderer, visible map, or valid-looking explanation does not change this classification.
+- `🚨 Error`: a concrete system or tool failure blocked the result, such as an action error, data-source error, 403, 429, timeout, crash, or other exception. Use this only when the artifact contains evidence of the exception; do not use it merely because the user goal was not met.
+
+For numeric, lookup, comparison, ranking, and aggregation prompts, apply this decision order:
+
+1. If the requested result is present and materially correct, use `✅ Success`.
+2. If a useful result is present but one or more requested non-essential fields, records, views, or presentation details are missing, use `⚠️ Partial Success`.
+3. If the requested result itself is absent, contradicted, or explicitly unavailable, use `❌ Failure` unless a concrete exception caused the absence.
+
+Do not infer success from nearby evidence. A visible Council Districts map does not answer a request for total population; the population total must appear in the answer or renderer. An assistant statement such as "I can't calculate" or "try again" is evidence that the primary goal was not completed, not evidence of success.
 
 A missing-data or unsupported-capability turn counts as success when:
 
