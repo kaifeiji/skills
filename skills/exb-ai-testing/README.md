@@ -34,22 +34,22 @@ The local command refreshes the installed skill; it does not install the target 
 
 ## Usage
 
-Use the skill with the App URL. Before execution it asks the user to choose English or Chinese, a viewport, and whether to auto-generate questions or provide custom questions. Auto-generated turns follow page capabilities; custom questions retain their exact wording, count, and order. It shows the browser window by default and saves results under `artifacts`. A test focus and alternate save location are optional. Browser execution mode remains internal.
+The normal workflow is:
 
-Config and artifact names are enforced:
+1. Provide the app URL and input choices above.
+2. Complete sign-in in the browser if required.
+3. Review and approve the generated or provided test questions.
+4. Approve the test run.
+5. Review the generated `analysis.md` report and test artifacts.
 
-```text
-config/<app-slug>-NN.json
-artifacts/<YYYYMMDD>-<app-slug>-NN-MM/
-```
+Provide the following input when using the skill:
 
-`NN` is the config sequence starting at `01`; `MM` is the run sequence for that config. Custom output names that do not match these patterns are rejected.
-
-The first step is to check Node.js, `@playwright/test`, and Playwright Chromium. Do not open the app in the VS Code browser. If `@playwright/test` or Chromium is missing, ask the user before installing it. The app must be opened by the bundled Node Playwright scripts.
-
-Each case artifact includes a readable `case-debug.md` summary and a `case-debug.json` AssistantRuntime business-state snapshot for deeper investigation. The JSON intentionally omits compiled graphs, dependencies, functions, promises, and portal objects.
-
-App context collection creates configured data sources through ExB's runtime manager, waits for child layers, and stores plain layer and field metadata for referenced roots. Runtime objects are not serialized.
+- Experience Builder app URL
+- Output language: English or Chinese
+- Viewport: desktop, pad, or mobile
+- Question source: auto-generated questions or user-provided questions
+- Custom questions, when selected
+- Optional test focus
 
 ## Workflow
 
