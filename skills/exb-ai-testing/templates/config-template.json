@@ -102,13 +102,7 @@
         "pageTitle": "<visible page title>",
         "pageUrl": "https://<app-url>/page/<generated-page-title>",
         "intent": "What user goal is being tested on this page?",
-        "turns": [
-          "Turn 1: natural user question",
-          "Turn 2: follow-up or correction",
-          "Turn 3: clarify or refine the goal",
-          "Turn 4: ask for an action or presentation change",
-          "Turn 5: challenge the result or push for a new state"
-        ],
+        "turns": [],
         "expectedBehavior": "What should be true about the app and assistant behavior?",
         "watchFor": ["Likely failure mode 1", "Likely failure mode 2"],
         "verification": {

@@ -81,6 +81,14 @@ Do not start execution until the case plan has been approved.
 
 Execute the reviewed cases in one continuous conversation flow, keeping the app state and prior context intact across the run.
 
+Invoke the runner with the run artifact directory that contains `run-config.json`:
+
+```bash
+node "<skill-root>/tooling/run-cases.mjs" "<run-directory>"
+```
+
+Pass the containing directory. If the runner reports an argument-format error, retry once with the directory that contains `run-config.json`; the documented form is sufficient.
+
 During execution, check for:
 
 - app/session availability

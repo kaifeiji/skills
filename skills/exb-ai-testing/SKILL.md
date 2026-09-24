@@ -18,7 +18,7 @@ The skill bundle root is the parent directory of the absolute `SKILL.md` path su
 Before running any script, use the current host's available interactive question mechanism to present these three choices in one request:
 
 1. **Output language:** English (`en`) or Chinese (`zh`).
-2. **Questions:** use `Auto-generate test questions` / `I will provide test questions` in English, or `自动生成测试问题` / `我提供测试问题` in Chinese. Use these labels verbatim.
+2. **Questions:** use exactly two options in the selected output language. For English, use `Auto-generate test questions` and `I will provide test questions`; for Chinese, use `自动生成测试问题` and `我提供测试问题`. Keep the English and Chinese labels out of the same option list.
 3. **Viewport:** desktop (`1920x1080`), pad (`1024x1366`), or mobile (`390x844`).
 
 The Turn Generation Protocol determines the turns for auto-generated cases. Custom questions determine their own wording, order, and count.
@@ -37,6 +37,8 @@ Use one terse update for the active phase only. Follow these templates in the se
 - **Testing:** `Running test <current>/<total>: <case-id>`
 - **Analysis:** `Analyzing test results.` Completion: `Analysis saved: <path>. <brief outcome>`
 
+Report only the current phase, user decisions, approvals, and concrete outcomes. Keep internal hypotheses, command troubleshooting, parameter guesses, and retry narration out of user-facing updates.
+
 Progress updates are informational and add no approval stops beyond the Human Checkpoints.
 
 ## Ownership Boundaries
@@ -46,6 +48,16 @@ Progress updates are informational and add no approval stops beyond the Human Ch
 - **`<skill-root>/tooling/probe-session.mjs`**: quickly check the shared browser profile; open ArcGIS sign-in when needed and persist the completed session in that profile.
 - **`<skill-root>/tooling/prepare-app-context.mjs`**: collect app context and accessible pages, derive a unique slug, and write a config with an empty `suite.cases` array. It does not generate or review prompts.
 - **`<skill-root>/tooling/run-cases.mjs`**: validate session and Chat UI, run reviewed cases as one continuous conversation across ExB pages, and write evidence. It does not invent cases or decide expected behavior.
+
+### Runner Invocation Contract
+
+Run the cases runner with the run artifact directory that contains `run-config.json`:
+
+```bash
+node "<skill-root>/tooling/run-cases.mjs" "<run-directory>"
+```
+
+`<run-directory>` contains `run-config.json` and the reviewed suite. When an argument-format error appears, pass this containing directory and retry once. Use the documented directory form directly.
 
 ### Agent Input Boundary
 

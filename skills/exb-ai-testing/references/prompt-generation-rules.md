@@ -41,6 +41,8 @@ Choose a category when the page context supports it.
 
 The Turn Generation Protocol is the single source of truth for turn composition. Every auto-generated case follows it. When any other rule, hint, or example appears to conflict with it, the Turn Generation Protocol takes precedence.
 
+The protocol defines a capability-based turn set. Build each case from the relevant accessible page, adding a turn only when the page evidence supports that capability. Keep unrelated page goals in separate cases.
+
 For each auto-generated case, generate turns in this priority order:
 
 1. **Page Overview / Capability / How-to (required)**  
@@ -56,16 +58,17 @@ For each auto-generated case, generate turns in this priority order:
    Count, sum, average, min, max, or another supported aggregate. Use a distinct user goal and a distinct aggregation dimension from the Query and Filter / Rank turns.
 
 5. **Functional Widget Action (when the page has reachable actionable widgets)**  
-   One action turn per selected functional widget, up to 5 action turns.
+   Add one action turn for each selected functional widget, up to the supported maximum of 5 action turns.
 
 Turn requirements:
 
-- Turn 1 is always present.
-- Turns 2–4 are present when the page has a usable data source and the required fields or widgets support them.
-- Turn 5 is present when the page has reachable functional widgets.
-- The final turn count follows page capability.
-- Each turn has a distinct user goal, so Query, Filter / Rank, and Statistics stay non-redundant.
-- When a required data, widget, or action path is absent, the corresponding turn is omitted and the limitation is recorded in `expectedBehavior` or `watchFor`.
+- Start with the overview turn for every case.
+- Add Query, Filter / Rank, and Statistics turns when the page has the corresponding data source, fields, and supported task.
+- Add widget action turns for reachable functional widgets, using one distinct high-value action per selected widget.
+- Keep each turn tied to a distinct user goal and let the resulting turn count reflect the page capabilities.
+- Record unsupported data, widget, or action paths in `expectedBehavior` or `watchFor`.
+
+Use the numbered sections as capability checks in priority order. An overview-only page produces one turn; data capabilities add their supported task turns; reachable widget actions add their selected action turns. The page evidence determines the final count.
 
 ## Business Task Coverage
 
