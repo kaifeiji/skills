@@ -16,25 +16,18 @@ Install the published skill globally:
 npx skills add https://github.com/kaifeiji/skills.git --skill exb-ai-testing --global
 ```
 
-For local skill development, run this from the repository root after editing the skill:
-
-```bash
-npx skills add . --skill exb-ai-testing --global --yes
-```
-
-The local command refreshes the installed skill; it does not install the target app's dependencies. The first test run performs the Node.js, `@playwright/test`, and Chromium checks described below.
-
 ## Included assets
 
 - SKILL.md
 - HUMAN-SOP.md
 - templates/
-- examples/ (`config-example.json`, `analysis-example.md`, and `case-debug-example.md`)
+- examples/
 - tooling/
+- references/
 
 ## Usage
 
-The normal workflow is:
+The workflow is:
 
 1. /exb-ai-testing {app URL}
 2. Complete sign-in in the browser if required.
