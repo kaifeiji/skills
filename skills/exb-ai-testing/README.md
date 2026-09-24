@@ -36,20 +36,11 @@ The local command refreshes the installed skill; it does not install the target 
 
 The normal workflow is:
 
-1. Provide the app URL and input choices above.
+1. /exb-ai-testing {app URL}
 2. Complete sign-in in the browser if required.
-3. Review and approve the generated or provided test questions.
+3. Review the generated or provided test questions.
 4. Approve the test run.
 5. Review the generated `analysis.md` report and test artifacts.
-
-Provide the following input when using the skill:
-
-- Experience Builder app URL
-- Output language: English or Chinese
-- Viewport: desktop, pad, or mobile
-- Question source: auto-generated questions or user-provided questions
-- Custom questions, when selected
-- Optional test focus
 
 ## Workflow
 
