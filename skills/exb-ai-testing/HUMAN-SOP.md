@@ -48,6 +48,8 @@ Gather the visible app context and the reachable page/widget state needed for ca
 
 The output should be a config with the app context and an empty `suite.cases` list before case generation begins.
 
+The config filename is mandatory: `config/<app-slug>-NN.json`, with `NN` starting at `01` and incrementing. The default artifact folder is also mandatory: `artifacts/<YYYYMMDD>-<app-slug>-NN-MM/`; `MM` increments for repeated runs of the same config. Invalid custom output names are rejected.
+
 ## 5. Author the case suite
 
 Generate one case per relevant accessible page for auto-mode, and only use the supplied questions in order for custom-question mode.

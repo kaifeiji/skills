@@ -20,6 +20,11 @@ if (!config) {
   console.error('Usage: node tooling/run-cases.mjs --config <config.json> [--mode headed|headless] [--output <dir>] [--case <case-id>] [--cache-dir <dir>]')
   process.exit(1)
 }
+const configStem = path.basename(configPath, path.extname(configPath))
+if (!/^[a-z0-9]+(?:-[a-z0-9]+)*-\d{2}$/.test(configStem) || config.slug !== configStem) {
+  console.error(`[run-cases] Config filename must be <app-slug>-NN.json and match config.slug. Received: ${path.basename(configPath)}`)
+  process.exit(1)
+}
 const language = config.language || 'en'
 if (!['en', 'zh'].includes(language)) {
   console.error('[run-cases] config.language must be en or zh')
@@ -32,7 +37,9 @@ if (!['headed', 'headless'].includes(mode)) {
   process.exit(1)
 }
 
-const runRoot = path.resolve(getArg('--output', process.env.TEST_OUTPUT || defaultRunDir()))
+const outputArg = getArg('--output', process.env.TEST_OUTPUT)
+const runRoot = path.resolve(outputArg || defaultRunDir())
+validateRunDirectory(runRoot, Boolean(outputArg))
 const selectedCase = getArg('--case', process.env.TEST_CASE)
 const cacheDir = path.resolve(getArg('--cache-dir', process.env.TEST_CACHE_DIR || path.join('.cache', 'browser-profile')))
 const cases = (config.suite?.cases || []).filter((testCase) => !selectedCase || testCase.id === selectedCase)
@@ -89,13 +96,25 @@ const turnTimeout = Number(config.timeouts?.turn || process.env.TEST_TURN_TIMEOU
 
 function defaultRunDir() {
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
-  const configStem = path.basename(configPath, path.extname(configPath))
   let sequence = 1
   while (true) {
     const runDir = path.join('artifacts', `${date}-${configStem}-${String(sequence).padStart(2, '0')}`)
     if (!fs.existsSync(runDir)) return runDir
     sequence += 1
   }
+}
+
+function validateRunDirectory(directory, explicit) {
+  const name = path.basename(directory)
+  const pattern = new RegExp(`^\\d{8}-${escapeRegExp(configStem)}-\\d{2}-\\d{2}$`)
+  if (explicit && !pattern.test(name)) {
+    console.error(`[run-cases] Artifact directory must be <YYYYMMDD>-${configStem}-NN-MM. Received: ${name}`)
+    process.exit(1)
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 async function findVisibleLocator(page, candidates, wait = 0) {

@@ -25,11 +25,11 @@ The tester will provide some or all of:
 
 ## Evidence Order
 
-Start with `case-debug.md`. If it contains a prompt, usable Agent Response, relevant plan/action evidence, and no visible contradiction, it is sufficient for a concise text-only finding.
+Start with `case-debug.md`. If it contains a prompt, usable Agent Response, relevant plan/action evidence, and no contradiction, use it for a concise text-only finding and do not open the screenshot. This is sufficient for a plain-text answer that does not depend on a visual app state.
 
 Open the turn screenshot whenever `case-debug.md` reports a renderer UI, the prompt requests a table/chart/list/map or another visual presentation, visible app state matters, the response is marked missing, Markdown is ambiguous, or debug text conflicts with expected behavior. Renderer output is user-visible evidence and cannot be judged from Agent Response text alone. Use `case-debug.json` only when Markdown cannot explain the cause and raw business-state evidence is needed.
 
-The final `analysis.md` must still include the clickable turn screenshot for every turn, even when the agent did not open or inspect that image during analysis. The image link is report evidence for the reader, not a requirement to feed every screenshot into the agent's analysis context.
+The final `analysis.md` must still include the clickable turn screenshot link for every turn, even when the agent did not open or inspect that image during analysis. A required link is not a required screenshot inspection: attach it for reader evidence, but do not claim a screenshot-based visible-state observation unless the image was opened.
 
 When supplemental evidence is needed, use this order:
 
@@ -39,7 +39,7 @@ When supplemental evidence is needed, use this order:
 4. If sources disagree, report the disagreement and classify the user-visible state from the screenshot.
 5. Before calling a response missing, search supplemental screenshot evidence for the requested answer.
 
-For every turn, embed the actual screenshot link and state whether the requested result is visibly present, partial, or absent only when the screenshot was inspected. Read the filename from `result.json` at `turns[].screenshot`, resolve it from the run-root `analysis.md` as `./<case-id>/<screenshot>`, and verify that file exists before writing the report. Use a clickable image reference:
+For every turn, embed the actual screenshot link. Only state that the requested result is visibly present, partial, or absent when the screenshot was inspected. For an uninspected screenshot, summarize the final user-facing answer from `case-debug.md` and state any remaining visual evidence boundary without opening the image solely to satisfy the link requirement. Read the filename from `result.json` at `turns[].screenshot`, resolve it from the run-root `analysis.md` as `./<case-id>/<screenshot>`, and verify that file exists before writing the report. Use a clickable image reference:
 
 ```markdown
 [![Turn 1 screenshot](./<case-id>/turn-01.png)](./<case-id>/turn-01.png)

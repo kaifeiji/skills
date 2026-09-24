@@ -234,11 +234,12 @@ function resolveConfigTarget(baseSlug, outputArg) {
   const requestedOutput = path.resolve(outputArg || path.join('config', `${baseSlug}.json`))
   const outputDir = path.dirname(requestedOutput)
   const extension = path.extname(requestedOutput) || '.json'
-  const outputStem = path.basename(requestedOutput, extension)
   const appSlug = nextAvailableSlug(baseSlug, outputDir)
-  const output = outputArg
-    ? nextAvailableFile(outputDir, outputStem, extension)
-    : path.join(outputDir, `${appSlug}${extension}`)
+  const expectedName = `${appSlug}.json`
+  if (outputArg && path.basename(requestedOutput) !== expectedName) {
+    throw new Error(`[prepare-app-context] Output file must be named ${expectedName}.`)
+  }
+  const output = path.join(outputDir, expectedName)
   return { appSlug, output }
 }
 
@@ -248,15 +249,6 @@ function nextAvailableSlug(baseSlug, configDir) {
     const slug = withSequence(baseSlug, sequence)
     const defaultConfig = path.join(configDir, `${slug}.json`)
     if (!fs.existsSync(defaultConfig) && !configSlugExists(configDir, slug)) return slug
-    sequence += 1
-  }
-}
-
-function nextAvailableFile(directory, stem, extension) {
-  let sequence = 1
-  while (true) {
-    const output = path.join(directory, `${withSequence(stem, sequence)}${extension}`)
-    if (!fs.existsSync(output)) return output
     sequence += 1
   }
 }
