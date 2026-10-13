@@ -164,7 +164,13 @@ async function dismissBlockingModals(page) {
   let handled = 0
 
   while (Date.now() < deadline && handled < 5) {
-    const dialogs = page.locator('[role="dialog"]:visible, dialog:visible')
+    const runtimeDialogId = await page.evaluate(
+      () => window._appStore?.getState?.()?.appRuntimeInfo?.currentDialogId || null,
+    )
+    const dialogSelector = runtimeDialogId
+      ? '[role="dialog"]:visible, dialog:visible'
+      : '[role="dialog"][aria-modal="true"]:visible, dialog:modal'
+    const dialogs = page.locator(dialogSelector)
     const count = await dialogs.count()
     if (!count) {
       if (handled > 0 || Date.now() >= graceDeadline) return handled
@@ -586,6 +592,8 @@ async function waitForTurn(page, before, deadline) {
   const trace = []
   const humanInputs = []
   const handledInterrupts = new Set()
+  const startedAt = Date.now()
+  let nextHeartbeatAt = startedAt + 10_000
   let previousSignal = JSON.stringify(before.signal)
   while (true) {
     const runtime = await readRuntime(page)
@@ -605,6 +613,12 @@ async function waitForTurn(page, before, deadline) {
       if (humanInput.status === 'requires-human-input') {
         return { ...runtime, status: 'human-input-required', trace, humanInputs }
       }
+    }
+    if (Date.now() >= nextHeartbeatAt) {
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000)
+      const limitSeconds = Math.round((deadline - startedAt) / 1000)
+      console.log(`[run-cases] Turn still running (${elapsedSeconds}s/${limitSeconds}s): working=${runtime.isWorking === true ? 'yes' : 'no'}, messages=${runtime.signal?.messageCount ?? 0}, steps=${runtime.signal?.completedStepCount ?? 0}.`)
+      nextHeartbeatAt += 10_000
     }
     const status = terminalStatus(runtime.transcript) || runtimeTerminalStatus(runtime, before)
     if (changed && status) return { ...runtime, status, trace, humanInputs }
@@ -978,7 +992,11 @@ try {
       await changeCasePage(page, testCase, index === 0)
       await inspectSession(page)
       await dismissBlockingModals(page)
-      if (index === 0) await page.waitForLoadState('networkidle', { timeout: 0 })
+      if (index === 0) {
+        await page.waitForLoadState('networkidle', { timeout: readyTimeout }).catch(() => {
+          console.log('[run-cases] Page did not reach network idle; continuing after app readiness checks.')
+        })
+      }
       await openAssistantPanel(page)
       const ready = await findVisibleLocator(page, selectors.ready, readyTimeout)
       if (!ready) throw new Error('Chat input was not visible using the built-in Playwright locators.')
