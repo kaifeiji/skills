@@ -51,8 +51,9 @@ Treat the remote URL as authoritative; the extensions folder's location inside t
    - Honor an explicit branch name from the user. Otherwise, for either Experience Builder repository, use `f-he-{module}-{issue_number}`.
    - Resolve `{module}` from the changed code's owning directory: in the extensions repository use the widget directory under `client/extensions/widgets/<widget-name>`; in `client/jimu-ui/lib/components/<component-name>`, `client/jimu-ui/basic/lib/<component-name>`, or `client/jimu-ui/advanced/lib/<component-name>` use the component directory; elsewhere use the owning module directory name (for example, `client/jimu-core` maps to `jimu-core`).
    - If the changes span multiple widgets/modules or target shared extension or `jimu-ui/lib` code without one clear widget/component name, ask which module name to use. Use the issue number explicitly provided by the user or identifiable from the issue being handled. Ask only for a missing issue number when a new Experience Builder branch is actually needed; derive the branch name from the rule rather than asking the user to name it.
+   - Unless the user specifies another base, create new branches from `main`. Fetch `origin` and use the latest `origin/main` when available; otherwise use local `main`. If no `main` exists, ask before choosing another base.
    - Check local and remote branch names before creating one. Reuse an existing branch only when it clearly belongs to this task; otherwise ask before switching or overwriting work.
-   - Create a new branch with `git switch -c <branch>` when requested and safe.
+   - Create a new branch from the selected base, for example `git switch -c <branch> origin/main`. Record that base for PR creation. If switching would overwrite or conflict with existing work, stop and ask before proceeding.
    - Completion criterion: the current branch is the requested branch or follows `f-he-{module}-{issue_number}`, with the original work preserved.
 
 5. **Stage and commit the intended changes.**
@@ -64,7 +65,8 @@ Treat the remote URL as authoritative; the extensions folder's location inside t
 
 6. **Push and open the pull request when requested.**
    - Push with `git push -u origin <branch>`. Do not force-push; if a non-fast-forward or permission error occurs, stop and report it.
-   - Before creating a PR, check whether one already exists for the branch. Use the requested base, title, and body; otherwise infer the base from the repository default branch and draft a brief title and body that state only the essential change and relevant checks.
+   - Before creating a PR, check whether one already exists for the branch. Use the requested base when provided; otherwise use the base recorded when the branch was created. For an existing branch with no known base, determine it from the task or branch history; ask if it remains ambiguous rather than defaulting to the repository's main branch.
+   - Use the requested title and body when provided; otherwise draft a brief title and body that state only the essential change and relevant checks.
    - Create the PR with `gh pr create`, relying on the checked-out repository context. For non-default hosts, verify that `gh` is targeting the host identified from `origin`.
    - Completion criterion: the branch is pushed and, when requested, `gh pr view` confirms the PR's URL, base, head, and state.
 
