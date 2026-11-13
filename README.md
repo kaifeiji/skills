@@ -34,3 +34,4 @@ Development loop:
 ## Available Skills
 
 - `exb-ai-testing`: App-aware AI Chat testing workflow for Experience Builder apps.
+- `github-delivery`: Read GitHub repositories, issues, pull requests, releases, and Actions; deliver changes with Git and GitHub CLI.
