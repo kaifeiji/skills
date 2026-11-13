@@ -44,13 +44,13 @@ Treat the remote URL as authoritative; the extensions folder's location inside t
    - Run `git status --short --branch`, inspect staged and unstaged diffs, and identify untracked files.
    - Inspect the `origin` remote and recent commit-message conventions.
    - Separate the requested changes from unrelated or pre-existing work. If the intended changes cannot be isolated safely, ask which files to include.
-   - If there are no changes to deliver, stop before creating a branch, empty commit, push, or PR; report that the worktree is clean.
+   - If there are no changes to deliver, stop before creating a branch, empty commit, push, or PR; report that the worktree is clean and ask only what changes the user wants delivered. Do not ask for module, issue number, or branch details at this point.
    - Completion criterion: the exact files and changes intended for delivery are known, and no unrelated work will be included.
 
 4. **Create or select the requested branch.**
    - Honor an explicit branch name from the user. Otherwise, for either Experience Builder repository, use `f-he-{module}-{issue_number}`.
    - Resolve `{module}` from the changed code's owning directory: in the extensions repository use the widget directory under `client/extensions/widgets/<widget-name>`; in `client/jimu-ui/lib/components/<component-name>`, `client/jimu-ui/basic/lib/<component-name>`, or `client/jimu-ui/advanced/lib/<component-name>` use the component directory; elsewhere use the owning module directory name (for example, `client/jimu-core` maps to `jimu-core`).
-   - If the changes span multiple widgets/modules or target shared extension or `jimu-ui/lib` code without one clear widget/component name, ask which module name to use. Use the issue number explicitly provided by the user or the issue being handled; ask for it if unavailable rather than inventing one.
+   - If the changes span multiple widgets/modules or target shared extension or `jimu-ui/lib` code without one clear widget/component name, ask which module name to use. Use the issue number explicitly provided by the user or identifiable from the issue being handled. Ask only for a missing issue number when a new Experience Builder branch is actually needed; derive the branch name from the rule rather than asking the user to name it.
    - Check local and remote branch names before creating one. Reuse an existing branch only when it clearly belongs to this task; otherwise ask before switching or overwriting work.
    - Create a new branch with `git switch -c <branch>` when requested and safe.
    - Completion criterion: the current branch is the requested branch or follows `f-he-{module}-{issue_number}`, with the original work preserved.
